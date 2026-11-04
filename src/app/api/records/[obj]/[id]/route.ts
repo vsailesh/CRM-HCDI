@@ -4,6 +4,7 @@ import { ok, bad, actorOf } from "@/lib/api";
 import { auditPhi } from "@/lib/phi";
 import { logAudit, clientIp } from "@/lib/audit";
 import { getFields, getObject, listObjects } from "@/lib/meta";
+import { resetSlaMarks } from "@/lib/case-automation";
 import { deleteRecord, getRecord, listRecords, updateRecord } from "@/lib/records";
 
 type Ctx = { params: Promise<{ obj: string; id: string }> };
@@ -38,6 +39,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
   const b = await req.json().catch(() => ({}));
   const r = updateRecord(obj, id, b.values ?? {}, b.ownerId);
   if (r.errors.length) return bad(r.errors.join("; "), r.notFound ? 404 : 422);
+  if (obj === "case" && (r.changed ?? []).some((c) => ["dueDate", "priority", "status"].includes(c))) resetSlaMarks(id);
   if (o.phi) auditPhi(req, "update", obj, id, `fields=${(r.changed ?? []).join(",")}`); // field names only, no values
   return ok({}, "Saved");
 }

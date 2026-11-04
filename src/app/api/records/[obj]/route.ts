@@ -3,6 +3,7 @@ import { ok, bad, actorOf } from "@/lib/api";
 import { auditPhi } from "@/lib/phi";
 import { getObject } from "@/lib/meta";
 import { createRecord, listRecords, type Filter } from "@/lib/records";
+import { caseAfterCreate, caseBeforeCreate } from "@/lib/case-automation";
 
 type Ctx = { params: Promise<{ obj: string }> };
 
@@ -38,8 +39,11 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   if (!o) return bad("Object not found", 404);
   const a = actorOf(req);
   const b = await req.json().catch(() => ({}));
-  const r = createRecord(obj, b.values ?? {}, a?.sub ?? null, b.ownerId);
+  // Case assignment rules + SLA due date (explicit owner / due date always win)
+  const pre = obj === "case" ? caseBeforeCreate(b.values ?? {}, b.ownerId, a?.sub ?? null) : null;
+  const r = createRecord(obj, pre?.values ?? b.values ?? {}, a?.sub ?? null, pre ? pre.ownerId : b.ownerId);
   if (r.errors.length) return bad(r.errors.join("; "), 422);
+  if (pre && r.id) caseAfterCreate(r.id, pre.notes);
   if (o.phi) auditPhi(req, "create", obj, r.id);
   return ok({ id: r.id }, "Created");
 }

@@ -106,7 +106,7 @@ export default function HomePage() {
             {feed.map((p) => (
               <li key={p.id} className="text-sm">
                 <p className="line-clamp-3">{String(p.values.body)}</p>
-                <p className="mt-0.5 text-[11px] text-gray-400">{p.ownerName ?? "Someone"} · {fmtDateTime(p.createdAt)} {p.values.postType === "Announcement" && <Chip tone="amber">Announcement</Chip>}</p>
+                <p className="mt-0.5 text-[11px] text-gray-400">{p.ownerName ?? (p.values.postType === "Alert" ? "Automation" : "Someone")} · {fmtDateTime(p.createdAt)} {p.values.postType === "Announcement" && <Chip tone="amber">Announcement</Chip>}</p>
               </li>
             ))}
             {feed.length === 0 && <li className="text-sm text-gray-400">No posts yet</li>}

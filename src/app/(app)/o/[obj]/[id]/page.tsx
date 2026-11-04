@@ -176,7 +176,7 @@ export default function RecordDetailPage() {
             {d.feed.map((p) => (
               <li key={p.id} className="rounded-xl bg-gray-50 p-3">
                 <p className="whitespace-pre-wrap text-sm">{String(p.values.body)}</p>
-                <p className="mt-1 text-[11px] text-gray-400">{p.ownerName ?? "Someone"} · {fmtDateTime(p.createdAt)}</p>
+                <p className="mt-1 text-[11px] text-gray-400">{p.ownerName ?? (p.values.postType === "Alert" ? "Automation" : "Someone")} · {fmtDateTime(p.createdAt)}</p>
               </li>
             ))}
             {d.feed.length === 0 && <li className="py-4 text-center text-xs text-gray-400">No posts yet</li>}
