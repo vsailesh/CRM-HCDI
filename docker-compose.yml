@@ -1,0 +1,33 @@
+# Single-host deployment behind a TLS-terminating reverse proxy / load balancer.
+# Put real values in a secret store and inject them as environment (or Docker secrets); do not commit them.
+# Required: VFV_DB_KEY, VFV_DATA_KEY, VFV_WEBHOOK_SECRET.   Generate each with:  openssl rand -base64 48
+services:
+  crm:
+    build: .
+    image: vfv-crm:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"   # only the local reverse proxy should reach the app; it terminates TLS
+    environment:
+      NODE_ENV: production
+      VFV_DB_KEY: ${VFV_DB_KEY:?set VFV_DB_KEY}
+      VFV_DATA_KEY: ${VFV_DATA_KEY:?set VFV_DATA_KEY}
+      VFV_WEBHOOK_SECRET: ${VFV_WEBHOOK_SECRET:?set VFV_WEBHOOK_SECRET}
+      VFV_TRUST_PROXY: "1"                          # only because a proxy you control sets X-Forwarded-For
+      VFV_WEBHOOK_ORIGINS: ${VFV_WEBHOOK_ORIGINS:-}  # comma-separated site origins allowed to post leads
+      # VFV_DB_ENCRYPT_EXISTING: "1"                 # one-time, only when migrating an old plaintext database
+    volumes:
+      - crm-data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/.next/cache
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+volumes:
+  crm-data:

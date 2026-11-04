@@ -85,6 +85,9 @@ function migratePlaintext(file: string, key: string) {
 }
 
 export function openDatabase(file: string): Database.Database {
+  // `next build` imports every route to collect page data. It must not need (or touch) the real database
+  // or key, so the image can be built without secrets. This in-memory database is discarded at once.
+  if (process.env.NEXT_PHASE === "phase-production-build") return new Database(":memory:");
   const key = dbKey();
   const exists = () => fs.existsSync(file) && fs.statSync(file).size > 0;
 

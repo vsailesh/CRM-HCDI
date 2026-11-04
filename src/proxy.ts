@@ -7,7 +7,7 @@ import { AUTH_COOKIE, verifySession } from "@/lib/auth";
  * caller identity as trusted headers for route handlers, and adds security
  * headers. Client-supplied x-vfv-* headers are always discarded.
  */
-const PUBLIC_PATHS = ["/login", "/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/auth/mfa/verify", "/r", "/api/webhook/lead"];
+const PUBLIC_PATHS = ["/login", "/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/auth/mfa/verify", "/r", "/api/webhook/lead", "/api/health"];
 const MFA_SETUP_PATHS = ["/mfa-setup", "/api/auth/mfa", "/api/auth/me", "/api/auth/logout"];
 
 function secure(res: NextResponse, noStore: boolean) {

@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+.gitignore
+data
+*.db
+*.db-*
+.env*
+npm-debug.log*
+Dockerfile
+docker-compose.yml
+README.md
+docs
+*.tsbuildinfo

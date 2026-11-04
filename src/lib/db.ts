@@ -307,7 +307,7 @@ export type { StageKey } from "./stages";
 import { STAGES } from "./stages";
 
 function seedInner() {
-  const count = (db.prepare("SELECT COUNT(*) AS n FROM customers").get() as { n: number }).n;
+  const count = (db.prepare(`SELECT COUNT(*) AS n FROM ${process.env.NODE_ENV === "production" ? "staff" : "customers"}`).get() as { n: number }).n;
   if (count > 0) return;
 
   const now = Date.now();
@@ -333,6 +333,10 @@ function seedInner() {
     const [used, max] = waLoad[s.id] ?? [0, 0];
     insStaff.run(s.id, s.code, s.name, s.email, s.phone, s.role, s.dept, s.desc, hash(s.email), used, max, JSON.stringify(perms), iso(3 * day), iso(28 * day), quota[s.id] ?? 0);
   }
+
+  // Production gets the staff rows only (so scripts/bootstrap-admin.mjs has an account to activate) —
+  // never demo customers/leads/conversations alongside real member data.
+  if (process.env.NODE_ENV === "production") return;
 
   // Real VFV sample contacts (from capture) + synthetic fill
   const realNames: Array<[string, string, string | null]> = [
