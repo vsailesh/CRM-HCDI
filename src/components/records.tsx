@@ -18,6 +18,13 @@ export async function api<T = any>(url: string, method = "GET", body?: unknown):
   return { ok: res.ok, data: j.data, message: j.message ?? "" };
 }
 
+/** Quote a CSV cell and neutralise spreadsheet formulas (=, +, -, @) so exported data can't execute in Excel. */
+export const csvCell = (v: unknown) => {
+  let t = String(v ?? "");
+  if (/^[=+\-@\t\r]/.test(t)) t = "'" + t;
+  return `"${t.replace(/"/g, '""')}"`;
+};
+
 export const fmtDate = (s?: unknown) => (s ? new Date(String(s).length === 10 ? `${s}T00:00:00` : String(s)).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "");
 export const fmtDateTime = (s?: unknown) => (s ? new Date(String(s)).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "");
 

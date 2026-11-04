@@ -6,7 +6,7 @@ import { Download, Play, Save, Trash2 } from "lucide-react";
 import { Card } from "@/components/ui";
 import { BarList, type Group } from "@/components/charts";
 import {
-  FieldValue, FilterEditor, api, btnDanger, btnGhost, btnPrimary, groupOptions, inputCls, numericFields,
+  FieldValue, FilterEditor, csvCell, api, btnDanger, btnGhost, btnPrimary, groupOptions, inputCls, numericFields,
   type Filter, type Meta, type RecordRow, type SField, type SObject,
 } from "@/components/records";
 
@@ -48,7 +48,7 @@ export default function ReportsPage() {
     const r = await api("/api/reports/run", "POST", { ...cfg, groupBy: undefined, csv: true });
     if (!r.ok) return setErr(r.message);
     const cols = fields.filter((f) => f.type !== "textarea");
-    const esc = (s: unknown) => `"${String(s ?? "").replace(/"/g, '""')}"`;
+    const esc = csvCell;
     const rows = r.data.rows as RecordRow[];
     const csv = [["Record Name", ...cols.map((c) => c.label)].map(esc).join(","),
       ...rows.map((rec) => [rec.name, ...cols.map((c) => (c.type === "lookup" ? rec.refs[c.api] : Array.isArray(rec.values[c.api]) ? (rec.values[c.api] as string[]).join("; ") : rec.values[c.api]))].map(esc).join(","))].join("\r\n");

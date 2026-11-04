@@ -4,6 +4,7 @@ import { bad } from "@/lib/api";
 import { AUTH_COOKIE, REQUIRE_MFA, cookieOptions, createChallenge, createSession } from "@/lib/auth";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import { clientIp, logAudit } from "@/lib/audit";
+import { throttle } from "@/lib/ratelimit";
 
 const MAX_FAILS = 5;
 const LOCK_MS = 15 * 60 * 1000;
@@ -12,6 +13,9 @@ const DUMMY_HASH = hashPassword("not-a-real-password");
 
 // POST /api/auth/login — { email, password } → sets vfv_session cookie
 export async function POST(req: NextRequest) {
+  // per-IP throttle stops one address from spraying many accounts; the global cap protects CPU (scrypt) without letting an attacker lock everyone out
+  const limited = throttle(req, "login", { perIp: 20, global: 300 });
+  if (limited) return limited;
   const b = await req.json().catch(() => null);
   if (!b?.email || !b?.password) return bad("email and password required", 400);
   const ip = clientIp(req);

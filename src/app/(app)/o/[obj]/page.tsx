@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowDown, ArrowUp, Download, Plus, Search } from "lucide-react";
 import { Card } from "@/components/ui";
-import { FieldValue, api, btnGhost, btnPrimary, inputCls, type Filter, type Meta, type RecordRow } from "@/components/records";
+import { FieldValue, csvCell, api, btnGhost, btnPrimary, inputCls, type Filter, type Meta, type RecordRow } from "@/components/records";
 
 const PAGE = 25;
 
@@ -50,7 +50,7 @@ export default function ObjectListPage() {
     const r = await api(`/api/reports/run`, "POST", { object: obj, filters, csv: true, sort, dir });
     if (!r.ok) return;
     const cols = meta.fields.filter((f) => f.type !== "textarea");
-    const esc = (s: unknown) => `"${String(s ?? "").replace(/"/g, '""')}"`;
+    const esc = csvCell;
     const csv = [["Record Name", ...cols.map((c) => c.label)].map(esc).join(","),
       ...(r.data.rows as RecordRow[]).map((rec) => [rec.name, ...cols.map((c) => (c.type === "lookup" ? rec.refs[c.api] : Array.isArray(rec.values[c.api]) ? (rec.values[c.api] as string[]).join("; ") : rec.values[c.api]))].map(esc).join(","))].join("\r\n");
     const a = document.createElement("a");

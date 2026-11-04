@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { safeHttpUrl } from "@/lib/safe-url";
 import db from "@/lib/db";
 import { ok, bad } from "@/lib/api";
 
@@ -18,6 +19,7 @@ export async function PATCH(req: NextRequest, { params }: P) {
     const destinationUrl = typeof b?.destinationUrl === "string" && b.destinationUrl.trim() ? b.destinationUrl.trim() : null;
     const campaignTag = typeof b?.campaignTag === "string" ? b.campaignTag.trim() || null : null;
     if (!name && !destinationUrl && campaignTag === null) return bad("nothing to update");
+    if (destinationUrl && !safeHttpUrl(destinationUrl)) return bad("destination must be a valid http(s) URL");
     if (name) db.prepare("UPDATE qr_codes SET name = ? WHERE id = ?").run(name, id);
     if (destinationUrl) db.prepare("UPDATE qr_codes SET destinationUrl = ? WHERE id = ?").run(destinationUrl, id);
     if (campaignTag !== null) db.prepare("UPDATE qr_codes SET campaignTag = ? WHERE id = ?").run(campaignTag, id);

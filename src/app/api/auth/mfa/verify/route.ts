@@ -3,6 +3,7 @@ import db from "@/lib/db";
 import { bad } from "@/lib/api";
 import { AUTH_COOKIE, consumeChallenge, cookieOptions, createSession, useChallenge } from "@/lib/auth";
 import { clientIp, logAudit } from "@/lib/audit";
+import { throttle } from "@/lib/ratelimit";
 import { decryptField } from "@/lib/secrets";
 import { hashRecovery, verifyTotp } from "@/lib/totp";
 
@@ -12,6 +13,8 @@ const LOCK_MS = 15 * 60 * 1000;
 // POST /api/auth/mfa/verify — { challenge, code } → full session.
 // `code` is a 6-digit TOTP or a one-time recovery code (xxxxx-xxxxx).
 export async function POST(req: NextRequest) {
+  const limited = throttle(req, "mfa-verify", { perIp: 30, global: 300 });
+  if (limited) return limited;
   const b = await req.json().catch(() => null);
   if (!b?.challenge || !b?.code) return bad("challenge and code required", 400);
   const ip = clientIp(req);

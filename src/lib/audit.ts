@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { peerIp } from "./ratelimit";
 import db from "./db";
 
 /**
@@ -50,5 +51,6 @@ export function verifyAuditChain(): number | null {
 }
 
 export function clientIp(req: Request): string | null {
-  return req.headers.get("x-forwarded-for")?.split(",")[0].trim() || null;
+  // X-Forwarded-For is only recorded when the proxy is trusted (see lib/ratelimit.ts) — otherwise a caller could forge the audit trail.
+  return peerIp(req);
 }

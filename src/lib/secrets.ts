@@ -28,3 +28,8 @@ export function decryptField(stored: string): string {
   d.setAuthTag(Buffer.from(tag, "base64"));
   return Buffer.concat([d.update(Buffer.from(enc, "base64")), d.final()]).toString("utf8");
 }
+
+/** Purpose-bound HMAC key derived from VFV_DATA_KEY, so one secret never serves two jobs. */
+export function derivedSecret(purpose: string): Buffer {
+  return crypto.createHmac("sha256", key()).update(purpose).digest();
+}

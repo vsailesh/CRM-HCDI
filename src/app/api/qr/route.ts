@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { safeHttpUrl } from "@/lib/safe-url";
 import crypto from "crypto";
 import db from "@/lib/db";
 import { ok, bad } from "@/lib/api";
@@ -35,6 +36,7 @@ export async function POST(req: NextRequest) {
     dest = `https://wa.me/${phone}${text}`;
   }
   if (!dest) return bad("destination URL is required");
+  if (!safeHttpUrl(dest)) return bad("destination must be a valid http(s) URL");
 
   // collect UTM params onto the destination
   const utm: Array<[string, string | undefined]> = [["utm_source", utmSource], ["utm_medium", utmMedium], ["utm_campaign", utmCampaign]];
