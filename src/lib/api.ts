@@ -17,3 +17,9 @@ export function actorOf(req: Request): { sub: string; name: string; role: string
   if (!sub) return null;
   return { sub, name: decodeURIComponent(req.headers.get("x-vfv-staff-name") ?? ""), role: req.headers.get("x-vfv-staff-role") ?? "staff" };
 }
+
+/** Record-access identity for the caller. Fails closed: no session → a viewer who matches nothing. */
+export function viewerOf(req: Request): { id: string; role: string } {
+  const a = actorOf(req);
+  return a ? { id: a.sub, role: a.role } : { id: "", role: "none" };
+}

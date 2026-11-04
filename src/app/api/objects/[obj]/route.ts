@@ -56,6 +56,19 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   return ok({ api }, "Created");
 }
 
+// PUT { field, visibleTo: "all" | "owner" | "admin" } — admin sets field-level security
+export async function PUT(req: NextRequest, ctx: Ctx) {
+  const a = actorOf(req);
+  if (a?.role !== "admin") return bad("Admin access required", 403);
+  const { obj } = await ctx.params;
+  const b = await req.json().catch(() => ({}));
+  if (!["all", "owner", "admin"].includes(b.visibleTo)) return bad("visibleTo must be all, owner or admin");
+  const hit = db.prepare("UPDATE sfields SET visibleTo = ? WHERE object = ? AND api = ?").run(b.visibleTo, obj, b.field);
+  if (!hit.changes) return bad("Field not found", 404);
+  logAudit({ actorId: a.sub, actorName: a.name, action: "access.field.update", resource: "sobject", resourceId: `${obj}.${b.field}`, ip: clientIp(req), detail: `visibleTo=${b.visibleTo}` });
+  return ok({}, "Saved");
+}
+
 // DELETE ?field=api — admin removes a field (values on existing records are left in place)
 export async function DELETE(req: NextRequest, ctx: Ctx) {
   const a = actorOf(req);

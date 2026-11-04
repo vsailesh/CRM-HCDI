@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { X } from "lucide-react";
+import { Lock, X } from "lucide-react";
 import type { SField, SObject } from "@/lib/meta";
 import type { RecordRow, Filter } from "@/lib/records";
 
@@ -23,11 +23,12 @@ export const fmtDateTime = (s?: unknown) => (s ? new Date(String(s)).toLocaleStr
 
 /** Read-only rendering of a field value. */
 export function FieldValue({ f, rec }: { f: SField; rec: RecordRow }) {
+  if (rec.hidden?.includes(f.api)) return <span className="inline-flex items-center gap-1 text-xs text-gray-400" title="Restricted by field security"><Lock className="size-3" /> Restricted</span>;
   const v = rec.values[f.api];
   if (v === undefined || v === null || v === "") return <span className="text-gray-300">—</span>;
   switch (f.type) {
     case "checkbox": return <span>{v ? "Yes" : "No"}</span>;
-    case "lookup": return <Link href={`/o/${f.ref}/${v}`} className="font-medium text-forest-800 underline-offset-2 hover:underline">{rec.refs[f.api]}</Link>;
+    case "lookup": return rec.refs[f.api] === "(restricted)" ? <span className="text-xs text-gray-400" title="You don't have access to this record">🔒 Restricted</span> : <Link href={`/o/${f.ref}/${v}`} className="font-medium text-forest-800 underline-offset-2 hover:underline">{rec.refs[f.api]}</Link>;
     case "date": return <>{fmtDate(v)}</>;
     case "datetime": return <>{fmtDateTime(v)}</>;
     case "percent": return <>{String(v)}%</>;

@@ -16,6 +16,7 @@ export type SField = {
   id: string; object: string; api: string; label: string; type: FieldType;
   required: boolean; options: string[]; ref: string | null; help: string | null;
   auto: { prefix: string; digits: number } | null; def: string | null; sortOrder: number;
+  visibleTo: "all" | "owner" | "admin";
 };
 export type SObject = {
   api: string; label: string; plural: string; icon: string; description: string | null;
@@ -33,7 +34,7 @@ CREATE TABLE IF NOT EXISTS sobjects (
 CREATE TABLE IF NOT EXISTS sfields (
   id TEXT PRIMARY KEY, object TEXT NOT NULL, api TEXT NOT NULL, label TEXT NOT NULL, type TEXT NOT NULL,
   required INTEGER NOT NULL DEFAULT 0, options TEXT NOT NULL DEFAULT '[]', ref TEXT, help TEXT,
-  auto TEXT, def TEXT, sortOrder INTEGER NOT NULL DEFAULT 100, UNIQUE(object, api)
+  auto TEXT, def TEXT, sortOrder INTEGER NOT NULL DEFAULT 100, visibleTo TEXT NOT NULL DEFAULT 'all', UNIQUE(object, api)
 );
 CREATE TABLE IF NOT EXISTS srecords (
   id TEXT PRIMARY KEY, object TEXT NOT NULL, name TEXT NOT NULL, data TEXT NOT NULL DEFAULT '{}',
@@ -50,11 +51,13 @@ CREATE TABLE IF NOT EXISTS reports (
 );
 `);
 
+try { db.exec("ALTER TABLE sfields ADD COLUMN visibleTo TEXT NOT NULL DEFAULT 'all'"); } catch { /* already migrated */ }
+
 export const newId = (p: string) => `${p}_${crypto.randomBytes(8).toString("base64url")}`;
 
 /* ───────────────────────── seed definitions ───────────────────────── */
 
-type Opt = { req?: boolean; options?: string[]; ref?: string; help?: string; auto?: { prefix: string; digits: number }; def?: string };
+type Opt = { vis?: "owner" | "admin"; req?: boolean; options?: string[]; ref?: string; help?: string; auto?: { prefix: string; digits: number }; def?: string };
 type FD = [api: string, label: string, type: FieldType, opt?: Opt];
 type OD = {
   api: string; label: string; plural: string; icon: string; description: string;
@@ -98,7 +101,7 @@ const OBJECTS: OD[] = [
     fields: [
       ["firstName", "First Name", "text"], ["lastName", "Last Name", "text", { req: true }],
       ["contactType", "Contact Type", "picklist", { def: "Member", options: ["Member", "Caregiver", "Provider Staff", "Health Plan Staff", "Other"] }],
-      ["memberId", "Member ID", "text"], ["dob", "Date of Birth", "date"],
+      ["memberId", "Member ID", "text"], ["dob", "Date of Birth", "date", { vis: "owner" }],
       ["gender", "Gender", "picklist", { options: ["Female", "Male", "Non-binary", "Unknown"] }],
       ["preferredLanguage", "Preferred Language", "picklist", { def: "English", options: LANG }],
       ["preferredContactMethod", "Preferred Contact Method", "picklist", { options: ["Phone", "SMS", "Email", "Mail"] }],
@@ -208,7 +211,7 @@ const OBJECTS: OD[] = [
       ...ADDR(), ["county", "County", "text"], ["phone", "Phone", "phone"],
       ["preferredLanguage", "Preferred Language", "picklist", { def: "English", options: LANG }],
       ["memberCount", "Members in Household", "number"],
-      ["eligibilityCaseNumber", "Eligibility Case Number", "text"],
+      ["eligibilityCaseNumber", "Eligibility Case Number", "text", { vis: "owner" }],
       ["renewalDueDate", "Renewal Due Date", "date"],
       ["renewalStatus", "Renewal Status", "picklist", { def: "Not Due", options: ["Not Due", "Due Soon", "In Progress", "Renewed", "Lapsed"] }],
       ["sdohNeeds", "Social Needs (SDOH)", "multipicklist", { options: ["Housing", "Food", "Transportation", "Utilities", "Employment", "Childcare", "None identified"] }],
@@ -265,8 +268,8 @@ const OBJECTS: OD[] = [
 
 const insObj = db.prepare(`INSERT OR IGNORE INTO sobjects (api,label,plural,icon,description,nameTemplate,pathField,phi,isSystem,listFields,sortOrder,createdAt)
   VALUES (?,?,?,?,?,?,?,?,1,?,?,?)`);
-const insFld = db.prepare(`INSERT OR IGNORE INTO sfields (id,object,api,label,type,required,options,ref,help,auto,def,sortOrder)
-  VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
+const insFld = db.prepare(`INSERT OR IGNORE INTO sfields (id,object,api,label,type,required,options,ref,help,auto,def,sortOrder,visibleTo)
+  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`);
 
 db.transaction(() => {
   const now = new Date().toISOString();
@@ -274,7 +277,7 @@ db.transaction(() => {
     insObj.run(o.api, o.label, o.plural, o.icon, o.description, o.nameTemplate, o.pathField ?? null, o.phi ? 1 : 0, JSON.stringify(o.list), i, now);
     o.fields.forEach(([api, label, type, op], j) =>
       insFld.run(`fld_${o.api}_${api}`, o.api, api, label, type, op?.req ? 1 : 0, JSON.stringify(op?.options ?? []),
-        op?.ref ?? null, op?.help ?? null, op?.auto ? JSON.stringify(op.auto) : null, op?.def ?? null, j));
+        op?.ref ?? null, op?.help ?? null, op?.auto ? JSON.stringify(op.auto) : null, op?.def ?? null, j, op?.vis ?? 'all'));
   });
 })();
 

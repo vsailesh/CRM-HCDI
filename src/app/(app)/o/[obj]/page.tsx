@@ -22,6 +22,7 @@ export default function ObjectListPage() {
   const [mine, setMine] = useState(false);
   const [pick, setPick] = useState({ field: "", value: "" });
   const [error, setError] = useState("");
+  const [level, setLevel] = useState("public");
 
   useEffect(() => {
     setMeta(null); setOffset(0); setQ(""); setPick({ field: "", value: "" }); setError("");
@@ -38,7 +39,7 @@ export default function ObjectListPage() {
     if (mine) p.set("owner", "me");
     if (filters.length) p.set("filters", JSON.stringify(filters));
     const r = await api(`/api/records/${obj}?${p}`);
-    if (r.ok) { setRows(r.data.data); setTotal(r.data.meta.total); } else setError(r.message);
+    if (r.ok) { setRows(r.data.data); setTotal(r.data.meta.total); setLevel(r.data.meta.level ?? "public"); } else setError(r.message);
   }, [meta, obj, offset, q, sort, dir, mine, pick]);
 
   useEffect(() => { const t = setTimeout(load, 150); return () => clearTimeout(t); }, [load]);
@@ -69,6 +70,7 @@ export default function ObjectListPage() {
           <h1 className="text-2xl font-bold tracking-tight">{meta.object.plural}</h1>
           <p className="mt-1 text-sm text-gray-500">{meta.object.description}</p>
           {meta.object.phi && <p className="mt-2 inline-block rounded-md bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800">Contains PHI — all access is logged</p>}
+          {level === "private" && <p className="ml-2 mt-2 inline-block rounded-md bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-600">Private — you see records you own, were shared with you, or that relate to your work</p>}
         </div>
         <div className="flex gap-2">
           <button className={btnGhost} onClick={exportCsv}><Download className="size-4" /> Export</button>

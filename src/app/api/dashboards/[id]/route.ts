@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import db from "@/lib/db";
-import { ok, bad, actorOf } from "@/lib/api";
+import { ok, bad, actorOf, viewerOf } from "@/lib/api";
 import { auditPhi } from "@/lib/phi";
 import { getObject } from "@/lib/meta";
 import { aggregate, listRecords, type Filter } from "@/lib/records";
@@ -21,10 +21,10 @@ function run(w: Widget, req: NextRequest) {
   try {
     if (o.phi) auditPhi(req, "list", w.object, undefined, `dashboard widget ${w.type}`);
     if (w.type === "table") {
-      const { rows, total } = listRecords(w.object, { filters: w.filters, limit: w.limit ?? 8, sort: "createdAt" });
+      const { rows, total } = listRecords(w.object, { filters: w.filters, limit: w.limit ?? 8, sort: "createdAt", viewer: viewerOf(req) });
       return { rows, total, listFields: o.listFields.slice(0, 4) };
     }
-    return aggregate({ object: w.object, filters: w.filters, groupBy: w.type === "metric" ? undefined : w.groupBy, metric: w.metric, metricField: w.metricField, limit: w.limit });
+    return aggregate({ object: w.object, filters: w.filters, groupBy: w.type === "metric" ? undefined : w.groupBy, metric: w.metric, metricField: w.metricField, limit: w.limit, viewer: viewerOf(req) });
   } catch (e) {
     return { error: (e as Error).message };
   }
@@ -50,7 +50,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     for (const w of b.widgets as Widget[]) {
       if (!getObject(w.object)) return bad(`Unknown object: ${w.object}`);
       if (w.type !== "table") {
-        try { aggregate({ object: w.object, filters: w.filters, groupBy: w.type === "metric" ? undefined : w.groupBy, metric: w.metric, metricField: w.metricField, limit: 1 }); }
+        try { aggregate({ object: w.object, filters: w.filters, groupBy: w.type === "metric" ? undefined : w.groupBy, metric: w.metric, metricField: w.metricField, limit: 1, viewer: viewerOf(req) }); }
         catch (e) { return bad(`${w.title}: ${(e as Error).message}`); }
       }
     }

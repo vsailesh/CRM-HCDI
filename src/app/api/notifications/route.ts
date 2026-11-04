@@ -1,8 +1,9 @@
 import db from "@/lib/db";
-import { ok } from "@/lib/api";
+import { ok, viewerOf } from "@/lib/api";
+import { visibleSql } from "@/lib/access";
 
 // GET /api/notifications — derived feed, nothing stored
-export async function GET() {
+export async function GET(req: Request) {
   const now = new Date().toISOString();
 
   const overdue = db.prepare(
@@ -25,7 +26,8 @@ export async function GET() {
      WHERE c.status != 'archived' AND l.updatedAt < datetime('now', '-14 days')`
   ).get() as { n: number };
 
-  const caseCount = (extra: string) => (db.prepare(`SELECT COUNT(*) AS n FROM srecords WHERE object = 'case' AND COALESCE(json_extract(data,'$.status'),'') != 'Closed' ${extra}`).get() as { n: number }).n;
+  const vis = visibleSql("case", viewerOf(req));
+  const caseCount = (extra: string) => (db.prepare(`SELECT COUNT(*) AS n FROM srecords WHERE object = 'case' AND COALESCE(json_extract(data,'$.status'),'') != 'Closed' ${extra}${vis.sql}`).get(...vis.params) as { n: number }).n;
   const escalated = caseCount("AND json_extract(data,'$.status') = 'Escalated'");
   const overdueCases = caseCount("AND json_extract(data,'$.dueDate') < date('now')");
 

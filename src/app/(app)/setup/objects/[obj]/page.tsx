@@ -35,6 +35,10 @@ export default function ObjectDetailSetupPage() {
     const r = await api(`/api/objects/${obj}?field=${apiName}`, "DELETE");
     if (!r.ok) setErr(r.message); else { setMsg("Field deleted"); load(); }
   }
+  async function setVis(field: string, visibleTo: string) {
+    const r = await api(`/api/objects/${obj}`, "PUT", { field, visibleTo });
+    if (r.ok) { setMsg("Field security updated"); load(); } else setErr(r.message);
+  }
   async function toggleList(apiName: string) {
     if (!meta) return;
     const cur = meta.object.listFields;
@@ -65,7 +69,7 @@ export default function ObjectDetailSetupPage() {
       <Card className="overflow-x-auto p-2">
         <table className="w-full text-left text-sm">
           <thead className="text-xs uppercase tracking-wide text-gray-500"><tr className="border-b border-gray-100">
-            {["Field label", "API name", "Type", "Required", "Details", "In list", ""].map((h) => <th key={h} className="px-4 py-3 font-semibold">{h}</th>)}</tr></thead>
+            {["Field label", "API name", "Type", "Required", "Details", "Visible to", "In list", ""].map((h) => <th key={h} className="px-4 py-3 font-semibold">{h}</th>)}</tr></thead>
           <tbody className="divide-y divide-gray-50">
             {meta.fields.map((fl) => (
               <tr key={fl.api}>
@@ -75,6 +79,11 @@ export default function ObjectDetailSetupPage() {
                 <td className="px-4 py-2.5">{fl.required ? "Yes" : ""}</td>
                 <td className="max-w-xs truncate px-4 py-2.5 text-xs text-gray-500" title={fl.options.join(", ")}>
                   {fl.type === "lookup" ? `→ ${fl.ref}` : fl.options.length ? fl.options.join(", ") : fl.auto ? `${fl.auto.prefix}${"0".repeat(fl.auto.digits)}` : fl.def ? `default: ${fl.def}` : ""}
+                </td>
+                <td className="px-4 py-2.5">
+                  <select aria-label={`Visibility of ${fl.label}`} className="h-8 rounded-lg border border-gray-200 bg-white px-2 text-xs" value={fl.visibleTo} onChange={(e) => setVis(fl.api, e.target.value)}>
+                    <option value="all">Everyone</option><option value="owner">Owner + admins</option><option value="admin">Admins only</option>
+                  </select>
                 </td>
                 <td className="px-4 py-2.5"><input type="checkbox" aria-label={`Show ${fl.label} in list`} className="size-4 accent-lime" checked={meta.object.listFields.includes(fl.api)} onChange={() => toggleList(fl.api)} /></td>
                 <td className="px-4 py-2.5 text-right"><button aria-label={`Delete ${fl.label}`} onClick={() => del(fl.api)} className="text-gray-300 hover:text-red-500"><Trash2 className="size-4" /></button></td>

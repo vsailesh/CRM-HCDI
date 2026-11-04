@@ -1,5 +1,6 @@
 import db from "./db";
 import { getFields, getObject, newId, type SField, type SObject } from "./meta";
+import { blockedFields, blockedForAggregate, canRead, visibleSql, type Viewer } from "./access";
 
 const API_RE = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 export const isApi = (s: unknown): s is string => typeof s === "string" && API_RE.test(s);
@@ -7,6 +8,7 @@ export const isApi = (s: unknown): s is string => typeof s === "string" && API_R
 export type RecordRow = {
   id: string; object: string; name: string; ownerId: string | null; ownerName: string | null;
   createdAt: string; updatedAt: string; values: Record<string, unknown>; refs: Record<string, string>;
+  hidden: string[]; // field api names the viewer is not allowed to see
 };
 export type Filter = { field: string; op: string; value?: string };
 
@@ -45,11 +47,12 @@ function nextAuto(object: string, f: SField): string {
 }
 
 /** Validate input against field metadata. `existing` makes it a partial update. */
-export function buildValues(fields: SField[], input: Record<string, unknown>, existing?: Record<string, unknown>) {
+export function buildValues(fields: SField[], input: Record<string, unknown>, existing?: Record<string, unknown>, blocked?: Set<string>) {
   const values: Record<string, unknown> = { ...(existing ?? {}) };
   const errors: string[] = [];
   for (const f of fields) {
     if (f.type === "autonumber") continue; // system-generated
+    if (blocked?.has(f.api)) continue; // field security: viewer cannot read or write this field
     const has = Object.prototype.hasOwnProperty.call(input, f.api);
     if (!has && existing) continue;
     let raw = has ? input[f.api] : undefined;
@@ -78,7 +81,7 @@ export function computeName(obj: SObject, fields: SField[], values: Record<strin
 
 /* ───────────── row shaping ───────────── */
 
-export function shapeRows(rows: any[], fields: SField[]): RecordRow[] {
+export function shapeRows(rows: any[], fields: SField[], viewer?: Viewer): RecordRow[] {
   const lookups = fields.filter((f) => f.type === "lookup");
   const ids = new Set<string>();
   const parsed = rows.map((r) => ({ ...r, values: JSON.parse(r.data || "{}") as Record<string, unknown> }));
@@ -88,15 +91,21 @@ export function shapeRows(rows: any[], fields: SField[]): RecordRow[] {
     const list = [...ids];
     for (let i = 0; i < list.length; i += 500) {
       const chunk = list.slice(i, i + 500);
-      for (const x of db.prepare(`SELECT id,name FROM srecords WHERE id IN (${chunk.map(() => "?").join(",")})`).all(...chunk) as { id: string; name: string }[]) names.set(x.id, x.name);
+      for (const x of db.prepare(`SELECT id,name,object,ownerId FROM srecords WHERE id IN (${chunk.map(() => "?").join(",")})`).all(...chunk) as { id: string; name: string; object: string; ownerId: string | null }[])
+        names.set(x.id, canRead(x.object, x, viewer) ? x.name : "(restricted)");
     }
   }
   const staff = new Map((db.prepare("SELECT id,name FROM staff").all() as { id: string; name: string }[]).map((s) => [s.id, s.name]));
-  return parsed.map((r) => ({
+  return parsed.map((r) => {
+    const hidden = blockedFields(fields, viewer, r.ownerId);
+    for (const a of hidden) delete r.values[a];
+    return {
     id: r.id, object: r.object, name: r.name, ownerId: r.ownerId, ownerName: r.ownerId ? staff.get(r.ownerId) ?? null : null,
     createdAt: r.createdAt, updatedAt: r.updatedAt, values: r.values,
     refs: Object.fromEntries(lookups.filter((f) => r.values[f.api]).map((f) => [f.api, names.get(String(r.values[f.api])) ?? "(deleted)"])),
-  }));
+    hidden: [...hidden],
+  } as RecordRow;
+  });
 }
 
 /* ───────────── querying ───────────── */
@@ -111,10 +120,12 @@ function expr(fields: SField[], field: string): { sql: string; params: unknown[]
   return f ? { sql: "json_extract(data, ?)", params: [`$.${field}`], f } : null;
 }
 
-export function buildWhere(object: string, fields: SField[], filters: Filter[], q?: string, ownerId?: string) {
+export function buildWhere(object: string, fields: SField[], filters: Filter[], q?: string, ownerId?: string, viewer?: Viewer) {
   let sql = "object = ?";
   const params: unknown[] = [object];
+  const blk = blockedForAggregate(fields, viewer); // filtering on a hidden field would reveal its value
   for (const flt of filters) {
+    if (blk.admin.has(flt.field) || blk.owner.has(flt.field)) continue;
     const e = expr(fields, flt.field);
     if (!e) continue;
     const v = flt.value ?? "";
@@ -135,34 +146,45 @@ export function buildWhere(object: string, fields: SField[], filters: Filter[], 
       case "overdue": sql += ` AND substr(${e.sql},1,10) < date('now')`; params.push(...e.params); break;
     }
   }
-  if (q) { sql += " AND (name LIKE ? OR EXISTS (SELECT 1 FROM json_each(srecords.data) WHERE json_each.value LIKE ?))"; params.push(`%${q}%`, `%${q}%`); }
+  if (q) {
+    let keyGuard = "";
+    const gp: unknown[] = [];
+    if (blk.admin.size) { keyGuard += ` AND json_each.key NOT IN (${[...blk.admin].map(() => "?").join(",")})`; gp.push(...blk.admin); }
+    if (blk.owner.size) { keyGuard += ` AND (json_each.key NOT IN (${[...blk.owner].map(() => "?").join(",")}) OR srecords.ownerId = ?)`; gp.push(...blk.owner, viewer!.id); }
+    sql += ` AND (name LIKE ? OR EXISTS (SELECT 1 FROM json_each(srecords.data) WHERE json_each.value LIKE ?${keyGuard}))`;
+    params.push(`%${q}%`, `%${q}%`, ...gp);
+  }
   if (ownerId) { sql += " AND ownerId = ?"; params.push(ownerId); }
+  const vis = visibleSql(object, viewer);
+  sql += vis.sql; params.push(...vis.params);
   return { sql, params };
 }
 
-export function listRecords(object: string, opts: { filters?: Filter[]; q?: string; ownerId?: string; sort?: string; dir?: string; limit?: number; offset?: number }) {
+export function listRecords(object: string, opts: { filters?: Filter[]; q?: string; ownerId?: string; sort?: string; dir?: string; limit?: number; offset?: number; viewer?: Viewer }) {
   const fields = getFields(object);
-  const w = buildWhere(object, fields, opts.filters ?? [], opts.q, opts.ownerId);
-  const e = expr(fields, opts.sort ?? "updatedAt") ?? expr(fields, "updatedAt")!;
+  const w = buildWhere(object, fields, opts.filters ?? [], opts.q, opts.ownerId, opts.viewer);
+  const blk = blockedForAggregate(fields, opts.viewer);
+  const sortOk = opts.sort && !blk.admin.has(opts.sort) && !blk.owner.has(opts.sort);
+  const e = expr(fields, sortOk ? opts.sort! : "updatedAt") ?? expr(fields, "updatedAt")!;
   const dir = opts.dir === "asc" ? "ASC" : "DESC";
   const limit = Math.min(500, Math.max(1, opts.limit ?? 25));
   const total = (db.prepare(`SELECT COUNT(*) n FROM srecords WHERE ${w.sql}`).get(...w.params) as { n: number }).n;
   const rows = db.prepare(`SELECT * FROM srecords WHERE ${w.sql} ORDER BY ${e.sql} ${dir} LIMIT ? OFFSET ?`)
     .all(...w.params, ...e.params, limit, Math.max(0, opts.offset ?? 0));
-  return { rows: shapeRows(rows, fields), total };
+  return { rows: shapeRows(rows, fields, opts.viewer), total };
 }
 
-export function getRecord(object: string, id: string): RecordRow | null {
-  const r = db.prepare("SELECT * FROM srecords WHERE id = ? AND object = ?").get(id, object);
-  return r ? shapeRows([r], getFields(object))[0] : null;
+export function getRecord(object: string, id: string, viewer?: Viewer): RecordRow | null {
+  const r = db.prepare("SELECT * FROM srecords WHERE id = ? AND object = ?").get(id, object) as any;
+  return r && canRead(object, r, viewer) ? shapeRows([r], getFields(object), viewer)[0] : null;
 }
 
 /* ───────────── writes ───────────── */
 
-export function createRecord(object: string, input: Record<string, unknown>, actorId: string | null, ownerId?: string | null) {
+export function createRecord(object: string, input: Record<string, unknown>, actorId: string | null, ownerId?: string | null, viewer?: Viewer) {
   const obj = getObject(object); if (!obj) return { errors: ["Unknown object"] };
   const fields = getFields(object);
-  const { values, errors } = buildValues(fields, input);
+  const { values, errors } = buildValues(fields, input, undefined, blockedFields(fields, viewer, ownerId ?? actorId));
   if (errors.length) return { errors };
   const id = newId("rec");
   const now = new Date().toISOString();
@@ -175,13 +197,13 @@ export function createRecord(object: string, input: Record<string, unknown>, act
   return { id, errors: [] as string[] };
 }
 
-export function updateRecord(object: string, id: string, input: Record<string, unknown>, ownerId?: string | null) {
+export function updateRecord(object: string, id: string, input: Record<string, unknown>, ownerId?: string | null, viewer?: Viewer) {
   const obj = getObject(object); if (!obj) return { errors: ["Unknown object"] };
   const cur = db.prepare("SELECT * FROM srecords WHERE id = ? AND object = ?").get(id, object) as any;
   if (!cur) return { errors: ["Record not found"], notFound: true };
   const fields = getFields(object);
   const before = JSON.parse(cur.data) as Record<string, unknown>;
-  const { values, errors } = buildValues(fields, input, before);
+  const { values, errors } = buildValues(fields, input, before, blockedFields(fields, viewer, cur.ownerId));
   if (errors.length) return { errors };
   applyHooks(object, values, before);
   const changed = fields.filter((f) => JSON.stringify(values[f.api]) !== JSON.stringify(before[f.api])).map((f) => f.api);
@@ -233,13 +255,16 @@ function applyHooks(object: string, values: Record<string, unknown>, before?: Re
 
 export type AggSpec = {
   object: string; filters?: Filter[]; groupBy?: string;
-  metric?: "count" | "sum" | "avg" | "min" | "max"; metricField?: string; limit?: number; sort?: "value" | "key";
+  metric?: "count" | "sum" | "avg" | "min" | "max"; metricField?: string; limit?: number; sort?: "value" | "key"; viewer?: Viewer;
 };
 
 export function aggregate(spec: AggSpec) {
   const obj = getObject(spec.object); if (!obj) throw new Error("Unknown object");
   const fields = getFields(spec.object);
-  const w = buildWhere(spec.object, fields, spec.filters ?? []);
+  const w = buildWhere(spec.object, fields, spec.filters ?? [], undefined, undefined, spec.viewer);
+  const blk = blockedForAggregate(fields, spec.viewer);
+  const restricted = (a?: string) => !!a && (blk.admin.has(a.split(":")[0]) || blk.owner.has(a.split(":")[0]));
+  if (restricted(spec.groupBy) || restricted(spec.metricField)) throw new Error("That field is restricted");
   const metric = spec.metric ?? "count";
   let valSql = "COUNT(*)"; const valParams: unknown[] = [];
   if (metric !== "count") {

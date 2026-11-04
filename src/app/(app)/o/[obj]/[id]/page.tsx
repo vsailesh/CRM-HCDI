@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { Check, Pencil, Plus, Send, Trash2 } from "lucide-react";
+import { Check, Pencil, Plus, Send, Trash2, X } from "lucide-react";
 import { Card } from "@/components/ui";
 import {
   FieldValue, RecordForm, api, btnDanger, btnGhost, btnPrimary, fmtDateTime, inputCls,
@@ -11,7 +11,9 @@ import {
 } from "@/components/records";
 
 type Related = { object: string; label: string; via: string; viaApi: string; total: number; listFields: string[]; rows: RecordRow[] };
-type Detail = { record: RecordRow; related: Related[]; feed: RecordRow[] };
+type Access = { level: string; edit: boolean; delete: boolean; share: boolean };
+type Detail = { record: RecordRow; related: Related[]; feed: RecordRow[]; access: Access };
+type Share = { staffId: string; name: string; access: "read" | "edit" };
 type Staff = { id: string; name: string };
 
 export default function RecordDetailPage() {
@@ -28,6 +30,8 @@ export default function RecordDetailPage() {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [post, setPost] = useState("");
+  const [shares, setShares] = useState<Share[]>([]);
+  const [shareWith, setShareWith] = useState({ staffId: "", access: "read" });
 
   const load = useCallback(async () => {
     const [m, r] = await Promise.all([api<Meta>(`/api/objects/${obj}`), api<Detail>(`/api/records/${obj}/${id}`)]);
@@ -37,6 +41,7 @@ export default function RecordDetailPage() {
     const rm: Record<string, SField[]> = {};
     await Promise.all(r.data.related.map(async (x) => { const t = await api<Meta>(`/api/objects/${x.object}`); if (t.ok) rm[x.object] = t.data.fields; }));
     setRelMeta(rm);
+    if (r.data.access.share) { const sh = await api<Share[]>(`/api/records/${obj}/${id}/shares`); if (sh.ok) setShares(sh.data); } else setShares([]);
   }, [obj, id]);
 
   useEffect(() => { load(); }, [load]);
@@ -54,6 +59,15 @@ export default function RecordDetailPage() {
     const r = await api(`/api/records/${obj}/${id}`, "DELETE");
     if (!r.ok) return setErr(r.message);
     router.push(`/o/${obj}`);
+  }
+  async function addShare() {
+    if (!shareWith.staffId) return;
+    const r = await api(`/api/records/${obj}/${id}/shares`, "POST", shareWith);
+    if (!r.ok) return setErr(r.message);
+    setShareWith({ staffId: "", access: "read" }); setErr(""); load();
+  }
+  async function removeShare(staffId: string) {
+    await api(`/api/records/${obj}/${id}/shares?staffId=${staffId}`, "DELETE"); load();
   }
   async function sendPost() {
     if (!post.trim()) return;
@@ -84,8 +98,10 @@ export default function RecordDetailPage() {
               </>
             ) : (
               <>
-                <button className={btnGhost} onClick={() => setEdit(true)}><Pencil className="size-4" /> Edit</button>
-                <button className={btnDanger} onClick={remove}><Trash2 className="size-4" /> Delete</button>
+                {d.access.edit
+                  ? <button className={btnGhost} onClick={() => setEdit(true)}><Pencil className="size-4" /> Edit</button>
+                  : <span className="flex h-10 items-center rounded-xl bg-gray-100 px-3 text-xs font-semibold text-gray-500">Read-only</span>}
+                {d.access.delete && <button className={btnDanger} onClick={remove}><Trash2 className="size-4" /> Delete</button>}
               </>
             )}
           </div>
@@ -97,7 +113,7 @@ export default function RecordDetailPage() {
               const cur = i === stageIdx;
               return (
                 <li key={o}>
-                  <button disabled={busy || cur} onClick={() => save({ [pathField.api]: o })} aria-current={cur ? "step" : undefined}
+                  <button disabled={busy || cur || !d.access.edit} onClick={() => save({ [pathField.api]: o })} aria-current={cur ? "step" : undefined}
                     className={`flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-semibold transition-colors ${
                       cur ? "bg-forest-800 text-white" : i < stageIdx ? "bg-lime-soft text-forest-800 hover:bg-lime/60" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}>
                     {i < stageIdx && <Check className="size-3" />}{o}
@@ -117,15 +133,15 @@ export default function RecordDetailPage() {
             <h2 className="mb-4 text-sm font-bold uppercase tracking-wide text-gray-500">Details</h2>
             {edit ? (
               <>
-                <RecordForm fields={meta.fields} values={values} refs={refs}
+                <RecordForm fields={meta.fields.filter((f) => !rec.hidden.includes(f.api))} values={values} refs={refs}
                   onChange={(a, v, name) => { setValues((p) => ({ ...p, [a]: v })); if (name !== undefined) setRefs((p) => ({ ...p, [a]: name })); }} />
-                <label className="mt-4 block max-w-sm">
+                {d.access.share && <label className="mt-4 block max-w-sm">
                   <span className="mb-1 block text-xs font-semibold text-gray-600">Owner</span>
                   <select className={inputCls} value={ownerId} onChange={(e) => setOwnerId(e.target.value)}>
                     <option value="">Unassigned</option>
                     {staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
-                </label>
+                </label>}
               </>
             ) : (
               <dl className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
@@ -166,6 +182,29 @@ export default function RecordDetailPage() {
           })}
         </div>
 
+        <div className="space-y-5">
+        {d.access.share && d.access.level !== "public" && (
+          <Card className="h-fit p-6">
+            <h2 className="mb-1 text-sm font-bold uppercase tracking-wide text-gray-500">Sharing</h2>
+            <p className="mb-3 text-xs text-gray-400">{d.access.level === "private" ? "Only you, admins and people below can open this." : "Everyone can read this; only you, admins and people below can edit."}</p>
+            <ul className="space-y-1.5">
+              {shares.map((sh) => (
+                <li key={sh.staffId} className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-1.5 text-sm">
+                  <span>{sh.name} <span className="text-xs text-gray-400">· {sh.access === "edit" ? "can edit" : "can view"}</span></span>
+                  <button aria-label={`Stop sharing with ${sh.name}`} onClick={() => removeShare(sh.staffId)} className="text-gray-300 hover:text-red-500"><X className="size-4" /></button>
+                </li>
+              ))}
+              {shares.length === 0 && <li className="text-xs text-gray-400">Not shared with anyone.</li>}
+            </ul>
+            <div className="mt-3 flex gap-2">
+              <select aria-label="Share with" className={inputCls} value={shareWith.staffId} onChange={(e) => setShareWith({ ...shareWith, staffId: e.target.value })}>
+                <option value="">Share with…</option>{staff.filter((x) => x.id !== rec.ownerId).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+              </select>
+              <select aria-label="Access" className={`${inputCls} !w-28`} value={shareWith.access} onChange={(e) => setShareWith({ ...shareWith, access: e.target.value })}><option value="read">View</option><option value="edit">Edit</option></select>
+              <button className={btnPrimary} onClick={addShare}>Add</button>
+            </div>
+          </Card>
+        )}
         <Card className="h-fit p-6">
           <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-gray-500">Chatter</h2>
           <div className="flex gap-2">
@@ -182,6 +221,7 @@ export default function RecordDetailPage() {
             {d.feed.length === 0 && <li className="py-4 text-center text-xs text-gray-400">No posts yet</li>}
           </ul>
         </Card>
+        </div>
       </div>
     </div>
   );
