@@ -1,4 +1,5 @@
-import Database from "better-sqlite3";
+import type Database from "better-sqlite3-multiple-ciphers";
+import { openDatabase } from "./dbopen";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
@@ -10,7 +11,7 @@ fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 // One connection per process — route modules are bundled separately at build
 // time and would otherwise race on the DDL exec below (SQLITE_BUSY).
 const g = globalThis as any;
-const db: Database.Database = g.__vfvDb ?? (g.__vfvDb = new Database(DB_PATH));
+const db: Database.Database = g.__vfvDb ?? (g.__vfvDb = openDatabase(DB_PATH));
 db.pragma("busy_timeout = 5000");
 db.pragma("journal_mode = WAL");
 
