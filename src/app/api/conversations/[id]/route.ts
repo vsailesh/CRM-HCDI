@@ -1,11 +1,12 @@
 import { NextRequest } from "next/server";
 import db from "@/lib/db";
 import { ok, bad } from "@/lib/api";
+import { auditPhi } from "@/lib/phi";
 
 type P = { params: Promise<{ id: string }> };
 
 // GET /api/conversations/[id] — full thread + customer context
-export async function GET(_req: NextRequest, { params }: P) {
+export async function GET(req: NextRequest, { params }: P) {
   const { id } = await params;
   const conv = db.prepare(
     `SELECT v.id, v.channel, v.lastMessageAt, v.lastSnippet, v.unseen,
@@ -25,6 +26,7 @@ export async function GET(_req: NextRequest, { params }: P) {
   // opening the thread marks it read
   db.prepare("UPDATE conversations SET unseen = 0 WHERE id = ? AND unseen > 0").run(id);
 
+  auditPhi(req, "read", "conversations", id, `messages=${(messages as unknown[]).length}`);
   return ok({ conversation: { ...conv, unseen: 0 }, messages });
 }
 

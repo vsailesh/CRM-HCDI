@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import db from "@/lib/db";
 import { ok, bad } from "@/lib/api";
+import { auditPhi } from "@/lib/phi";
 import { runStageAutomations, runWorkflows } from "@/lib/automation";
 import { normPhone } from "@/lib/phone";
 import { pickOwner, bumpLoad } from "@/lib/assign";
@@ -38,6 +39,7 @@ export async function GET(req: NextRequest) {
      FROM customers`
   ).get() as { total: number; whatsapp: number; activeCount: number };
 
+  auditPhi(req, "list", "customers", undefined, `rows=${rows.length} total=${total}${q ? " searched" : ""}`);
   return ok({ data: rows, meta: { page, limit, total, pages: Math.ceil(total / limit) }, stats });
 }
 
@@ -69,11 +71,12 @@ export async function POST(req: NextRequest) {
     "prospect", b.source ?? "manual", owner, b.stage ?? null, now, now);
   if (b.stage) {
     const lid = `lead_${Date.now().toString(36)}`;
-    db.prepare("INSERT INTO leads (id, customerId, status, source, assignedStaffId, value, statusHistory, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?)")
+    db.prepare("INSERT INTO leads (id, customerId, status, source, assignedStaffId, value, statusHistory, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?)")
       .run(lid, id, b.stage, b.source ?? "manual", owner, Math.max(0, Math.round(Number(b.value) || 0)), JSON.stringify([{ status: b.stage, at: now }]), now, now);
     bumpLoad(owner, 1);
     runWorkflows("lead_created", id);
     runStageAutomations(b.stage, id);
   }
+  auditPhi(req, "create", "customers", id);
   return ok({ id, assignedTo: owner });
 }

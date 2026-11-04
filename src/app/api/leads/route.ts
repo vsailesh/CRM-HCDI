@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import db from "@/lib/db";
 import { ok, bad } from "@/lib/api";
+import { auditPhi } from "@/lib/phi";
 import { STAGES } from "@/lib/db";
 import { leadScore } from "@/lib/lead-score";
 import { runStageAutomations, runWorkflows } from "@/lib/automation";
@@ -46,6 +47,7 @@ export async function GET(req: NextRequest) {
      LIMIT ? OFFSET ?`
   ).all(...params, limit, (page - 1) * limit);
 
+  auditPhi(req, "list", "leads", undefined, `rows=${(rows as unknown[]).length} total=${total}`);
   return ok({
     data: (rows as LeadRow[]).map((r) => ({ ...r, score: leadScore(r) })),
     meta: { page, limit, total, pages: Math.ceil(total / limit) },
@@ -65,6 +67,7 @@ export async function PATCH(req: NextRequest) {
   if (body.value !== undefined && !body.status) {
     const v = Math.max(0, Math.round(Number(body.value) || 0));
     db.prepare("UPDATE leads SET value = ?, updatedAt = ? WHERE id = ?").run(v, new Date().toISOString(), body.id);
+    auditPhi(req, "update", "leads", body.id, "value");
     return ok({ id: body.id, value: v });
   }
 
@@ -87,6 +90,7 @@ export async function PATCH(req: NextRequest) {
   );
   const customerId = (db.prepare("SELECT customerId FROM leads WHERE id = ?").get(body.id) as { customerId: string }).customerId;
   const auto = runStageAutomations(body.status, customerId);
+  auditPhi(req, "update", "leads", body.id, `stage ${lead.status} -> ${body.status}`);
   return ok({ id: body.id, status: body.status, automation: auto });
 }
 
@@ -110,5 +114,6 @@ export async function POST(req: NextRequest) {
   db.prepare("UPDATE customers SET leadStage=? WHERE id=?").run(stage, cid);
   bumpLoad(owner, 1);
   runWorkflows("lead_created", cid);
+  auditPhi(req, "create", "leads", lid, `customer=${cid}`);
   return ok({ leadId: lid, customerId: cid, assignedTo: owner });
 }

@@ -1,10 +1,11 @@
 import { NextRequest } from "next/server";
 import db from "@/lib/db";
 import { ok, bad } from "@/lib/api";
+import { auditPhi } from "@/lib/phi";
 import { normPhone } from "@/lib/phone";
 
 // GET /api/customers/:id — detail incl notes, activities, followups, lead
-export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
   const customer = db.prepare(
     `SELECT c.*, s.name AS assignedStaffName FROM customers c LEFT JOIN staff s ON s.id = c.assignedStaffId WHERE c.id = ?`
@@ -21,6 +22,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     ? (db.prepare("SELECT id, name, phone, customerNumber FROM customers WHERE id != ? AND status != 'archived'").all(id) as Array<{ id: string; name: string; phone: string; customerNumber: string }>)
         .filter((c) => normPhone(c.phone) === norm)
     : [];
+  auditPhi(req, "read", "customers", id);
   return ok({ customer, notes, activities, followups, lead, dupes });
 }
 
@@ -39,5 +41,6 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   params.push(new Date().toISOString());
   params.push(id);
   db.prepare(`UPDATE customers SET ${sets.join(", ")} WHERE id = ?`).run(...params);
+  auditPhi(req, "update", "customers", id, `fields: ${Object.keys(b).filter((k) => k !== "id").join(",")}`);
   return ok({ id });
 }

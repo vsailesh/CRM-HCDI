@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import db from "@/lib/db";
 import { ok } from "@/lib/api";
+import { auditPhi } from "@/lib/phi";
 
 // GET /api/conversations?channel=whatsapp|manual&stage=new&q=
 export async function GET(req: NextRequest) {
@@ -26,5 +27,6 @@ export async function GET(req: NextRequest) {
   ).all(...params);
 
   const channels = db.prepare("SELECT channel, COUNT(*) AS n FROM conversations GROUP BY channel").all() as Array<{ channel: string; n: number }>;
+  auditPhi(req, "list", "conversations", undefined, `rows=${(rows as unknown[]).length}${q ? " searched" : ""}`);
   return ok({ data: rows, channels });
 }

@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import db from "@/lib/db";
 import { ok, bad } from "@/lib/api";
+import { auditPhi } from "@/lib/phi";
 
 // POST /api/customers/merge — {primaryId, dupeId}: fold dupe into primary, delete dupe.
 // Moves leads, follow-ups, notes, activities, conversations + messages; unions tags;
@@ -53,5 +54,6 @@ export async function POST(req: NextRequest) {
   });
   tx();
 
+  auditPhi(req, "merge", "customers", primary.id, `absorbed ${dupe.id}`);
   return ok({ id: primary.id, mergedFrom: dupe.id, moved });
 }

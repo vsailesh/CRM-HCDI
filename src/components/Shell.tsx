@@ -27,6 +27,7 @@ const NAV: Array<{ label: string; items: NavItem[] }> = [
           { href: "/crm/segments", label: "Segments" },
           { href: "/crm/analytics", label: "Analytics" },
           { href: "/staffs", label: "Staff" },
+          { href: "/compliance/audit", label: "Audit Log" },
         ],
       },
     ],

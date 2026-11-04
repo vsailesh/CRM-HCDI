@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import db from "@/lib/db";
 import { ok, bad } from "@/lib/api";
+import { auditPhi } from "@/lib/phi";
 import { normPhone } from "@/lib/phone";
 import { pickOwner, bumpLoad } from "@/lib/assign";
 
@@ -72,5 +73,6 @@ export async function POST(req: NextRequest) {
     });
   })();
 
+  auditPhi(req, "import", "customers", undefined, `imported=${imported} skipped=${skipped.length} total=${rows.length}`);
   return ok({ imported, leads, skipped, total: rows.length });
 }

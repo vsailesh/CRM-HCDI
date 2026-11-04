@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
+import { hashPassword } from "./password";
 
 const DB_PATH = path.join(process.cwd(), "data", "vfv.db");
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
@@ -235,6 +236,47 @@ CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+-- Server-side sessions: only the SHA-256 of the cookie token is stored.
+CREATE TABLE IF NOT EXISTS sessions (
+  id TEXT PRIMARY KEY,               -- sha256(token) hex
+  staffId TEXT NOT NULL,
+  createdAt INTEGER NOT NULL,
+  lastActiveAt INTEGER NOT NULL,
+  expiresAt INTEGER NOT NULL,        -- absolute lifetime
+  revokedAt INTEGER,
+  ip TEXT,
+  userAgent TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_staff ON sessions(staffId);
+
+-- Short-lived password-verified-but-MFA-pending logins.
+CREATE TABLE IF NOT EXISTS mfa_challenges (
+  id TEXT PRIMARY KEY,               -- sha256(challenge token)
+  staffId TEXT NOT NULL,
+  expiresAt INTEGER NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0
+);
+
+-- Append-only, hash-chained audit trail (HIPAA §164.312(b)).
+CREATE TABLE IF NOT EXISTS audit_log (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts TEXT NOT NULL,
+  actorId TEXT,
+  actorName TEXT,
+  action TEXT NOT NULL,              -- e.g. auth.login, phi.read, phi.export
+  resource TEXT,
+  resourceId TEXT,
+  outcome TEXT NOT NULL,             -- success | failure | denied
+  ip TEXT,
+  detail TEXT,
+  prevHash TEXT NOT NULL,
+  hash TEXT NOT NULL
+);
+CREATE TRIGGER IF NOT EXISTS audit_log_no_update BEFORE UPDATE ON audit_log
+BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS audit_log_no_delete BEFORE DELETE ON audit_log
+BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
 `);
 
 // Additive migrations for existing installs — CREATE IF NOT EXISTS won't add columns.
@@ -243,6 +285,14 @@ if (!leadCols.includes("value")) db.exec("ALTER TABLE leads ADD COLUMN value INT
 const segCols = (db.prepare("PRAGMA table_info(segments)").all() as Array<{ name: string }>).map((c) => c.name);
 if (!segCols.includes("rules")) db.exec("ALTER TABLE segments ADD COLUMN rules TEXT");
 const staffCols = (db.prepare("PRAGMA table_info(staff)").all() as Array<{ name: string }>).map((c) => c.name);
+if (!staffCols.includes("mfaSecret")) db.exec("ALTER TABLE staff ADD COLUMN mfaSecret TEXT");          // AES-GCM encrypted
+if (!staffCols.includes("mfaEnabled")) db.exec("ALTER TABLE staff ADD COLUMN mfaEnabled INTEGER NOT NULL DEFAULT 0");
+if (!staffCols.includes("mfaRecovery")) db.exec("ALTER TABLE staff ADD COLUMN mfaRecovery TEXT");        // JSON array of sha256 hashes
+if (!staffCols.includes("mfaLastStep")) db.exec("ALTER TABLE staff ADD COLUMN mfaLastStep INTEGER NOT NULL DEFAULT 0");
+const sessCols = (db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>).map((c) => c.name);
+if (!sessCols.includes("scope")) db.exec("ALTER TABLE sessions ADD COLUMN scope TEXT NOT NULL DEFAULT 'full'");
+if (!staffCols.includes("failedLogins")) db.exec("ALTER TABLE staff ADD COLUMN failedLogins INTEGER NOT NULL DEFAULT 0");
+if (!staffCols.includes("lockedUntil")) db.exec("ALTER TABLE staff ADD COLUMN lockedUntil INTEGER NOT NULL DEFAULT 0");
 if (!staffCols.includes("quotaMonthly")) {
   db.exec("ALTER TABLE staff ADD COLUMN quotaMonthly INTEGER NOT NULL DEFAULT 0");
   // backfill quotas for existing installs (₹/month won-revenue targets)
@@ -268,10 +318,12 @@ function seedInner() {
     { id: "stf2", code: "STF-K4M2P", name: "Sreya", email: "sreyav84@gmail.com", phone: "+916303684177", role: "staff", dept: "Marketing", desc: "Marketing Associate" },
     { id: "stf3", code: "STF-A9X1Q", name: "Sailesh", email: "saileshv3756@gmail.com", phone: "+919494491166", role: "admin", dept: null, desc: null },
   ];
-  const hash = (email: string) => crypto.createHash("sha256").update(`${email.toLowerCase()}:veda123`).digest("hex");
+  // Demo seed only — never seed known credentials in production.
+  const seedPw = process.env.NODE_ENV === "production" ? hashPassword(crypto.randomBytes(24).toString("base64url")) : hashPassword("veda123");
+  const hash = (_email: string) => seedPw;
   const ALL_PAGES = ["inbox", "crm:customers", "crm:pipeline", "crm:segments", "wa:templates", "wa:campaigns", "wa:chatbot", "gmb", "qr"];
   const insStaff = db.prepare(
-    "INSERT INTO staff (id, staffCode, name, email, phone, role, department, designation, passwordHash, isActive, isAvailable, currentActiveLeads, maxActiveLeads, permissions, lastSeenAt, createdAt, quotaMonthly) VALUES (?,?,?,?,?,?,?,?,?,1,1,?,?,?,?,?,?,?)"
+    "INSERT INTO staff (id, staffCode, name, email, phone, role, department, designation, passwordHash, isActive, isAvailable, currentActiveLeads, maxActiveLeads, permissions, lastSeenAt, createdAt, quotaMonthly) VALUES (?,?,?,?,?,?,?,?,?,1,1,?,?,?,?,?,?)"
   );
   const waLoad: Record<string, [number, number]> = { stf1: [2, 5], stf2: [1, 0], stf3: [0, 0] };
   const quota: Record<string, number> = { stf1: 100000, stf2: 80000, stf3: 150000 };

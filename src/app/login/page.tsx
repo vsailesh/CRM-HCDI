@@ -20,25 +20,34 @@ function LoginInner() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [challenge, setChallenge] = useState<string | null>(null);
+  const [code, setCode] = useState("");
+
+  function done(setup: boolean) {
+    router.push(setup ? "/mfa-setup" : next.startsWith("/") ? next : "/dashboard");
+    router.refresh();
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!email || !password) return;
     setBusy(true);
     setError("");
-    const res = await fetch("/api/auth/login", {
+    const step2 = challenge !== null;
+    if (!step2 && (!email || !password)) { setBusy(false); return; }
+    const res = await fetch(step2 ? "/api/auth/mfa/verify" : "/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify(step2 ? { challenge, code } : { email, password }),
     });
     const json = await res.json();
     setBusy(false);
-    if (res.ok) {
-      router.push(next.startsWith("/") ? next : "/dashboard");
-      router.refresh();
-    } else {
+    if (!res.ok) {
       setError(json.message ?? "Login failed");
+      if (step2 && res.status === 401 && /expired/i.test(json.message ?? "")) { setChallenge(null); setCode(""); }
+      return;
     }
+    if (json.data?.mfaRequired) { setChallenge(json.data.challenge); setPassword(""); return; }
+    done(!!json.data?.mfaSetupRequired);
   }
 
   return (
@@ -70,6 +79,17 @@ function LoginInner() {
           <h2 className="text-2xl font-bold tracking-tight">Welcome back</h2>
           <p className="mt-2 text-sm text-gray-500">Sign in to your VFV CRM workspace.</p>
 
+          {challenge !== null ? (
+            <div className="mt-6 space-y-2">
+              <label htmlFor="code" className="mb-1 block text-xs font-semibold text-gray-600">Authenticator code or recovery code</label>
+              <input id="code" value={code} onChange={(e) => setCode(e.target.value)} autoComplete="one-time-code" inputMode="text" required autoFocus
+                placeholder="123456"
+                className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50 px-3.5 text-center font-mono text-lg tracking-widest outline-none focus:bg-white focus:ring-2 focus:ring-lime" />
+              <button type="button" onClick={() => { setChallenge(null); setCode(""); setError(""); }} className="text-xs text-gray-500 underline">
+                Back to sign in
+              </button>
+            </div>
+          ) : (
           <div className="mt-6 space-y-4">
             <div>
               <label htmlFor="email" className="mb-1 block text-xs font-semibold text-gray-600">Email</label>
@@ -84,6 +104,7 @@ function LoginInner() {
                 className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50 px-3.5 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-lime" />
             </div>
           </div>
+          )}
 
           {error && (
             <p className="mt-4 rounded-xl bg-red-50 px-4 py-2.5 text-sm font-medium text-red-600">{error}</p>
@@ -91,7 +112,7 @@ function LoginInner() {
 
           <button type="submit" disabled={busy}
             className="mt-6 h-11 w-full rounded-xl bg-lime text-sm font-semibold text-forest-950 transition-colors hover:bg-lime-hover disabled:opacity-50">
-            {busy ? "Signing in…" : "Sign in"}
+            {busy ? "Signing in…" : challenge !== null ? "Verify" : "Sign in"}
           </button>
 
           <div className="mt-6 rounded-xl bg-gray-50 px-4 py-3 text-xs leading-relaxed text-gray-500">

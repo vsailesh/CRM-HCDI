@@ -3,6 +3,7 @@ import db from "@/lib/db";
 import { ok, bad } from "@/lib/api";
 import { normPhone } from "@/lib/phone";
 import { pickOwner, bumpLoad } from "@/lib/assign";
+import { logAudit } from "@/lib/audit";
 import { runWorkflows, runStageAutomations } from "@/lib/automation";
 
 // POST /api/webhook/lead — web-to-lead capture for the public website form.
@@ -75,6 +76,8 @@ export async function POST(req: NextRequest) {
   );
   runWorkflows("lead_created", cid);
   runStageAutomations("new", cid);
+
+  logAudit({ action: "phi.create", resource: "customers", resourceId: cid, ip, detail: "source=website-form (unauthenticated)" });
 
   // response is intentionally minimal — no ids leaked to anonymous callers
   return ok({ received: true });
