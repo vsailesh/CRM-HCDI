@@ -6,6 +6,8 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import {
   LayoutDashboard, Inbox, Users,
   MessageCircle, MapPin, QrCode, ChevronDown, Coins, Bell, RefreshCw, PanelLeft, LogOut,
+  Home, LifeBuoy, Contact, Building2, BookOpen, BarChart3, MessagesSquare, Paperclip, ClipboardCheck,
+  Stethoscope, Handshake, PhoneCall, Box,
   type LucideIcon,
 } from "lucide-react";
 
@@ -13,6 +15,27 @@ type NavLink = { href: string; label: string; icon: LucideIcon };
 type NavPlain = { label: string; icon: LucideIcon };
 type NavExpand = { label: string; icon: LucideIcon; children: Array<{ href: string; label: string }> };
 type NavItem = NavLink | NavPlain | NavExpand;
+const WORKSPACE: Array<{ label: string; items: NavItem[] }> = [
+  {
+    label: "Workspace",
+    items: [
+      { href: "/home", label: "Home", icon: Home },
+      { href: "/o/case", label: "Cases", icon: LifeBuoy },
+      { href: "/o/contact", label: "Contacts", icon: Contact },
+      { href: "/o/account", label: "Accounts", icon: Building2 },
+      { href: "/o/knowledge", label: "Knowledge", icon: BookOpen },
+      { href: "/reports", label: "Reports", icon: BarChart3 },
+      { href: "/dashboards", label: "Dashboards", icon: LayoutDashboard },
+      { href: "/o/chatter", label: "Chatter", icon: MessagesSquare },
+      { href: "/o/file", label: "Files", icon: Paperclip },
+      { href: "/o/hedis_measure", label: "HEDIS Measures", icon: ClipboardCheck },
+      { href: "/o/provider", label: "Providers", icon: Stethoscope },
+      { href: "/o/provider_health_plan", label: "Provider Health Plans", icon: Handshake },
+      { href: "/o/household", label: "Households", icon: Users },
+      { href: "/o/redetermination_call", label: "Redetermination Calls", icon: PhoneCall },
+    ],
+  },
+];
 const NAV: Array<{ label: string; items: NavItem[] }> = [
   {
     label: "Dashboard",
@@ -27,6 +50,7 @@ const NAV: Array<{ label: string; items: NavItem[] }> = [
           { href: "/crm/segments", label: "Segments" },
           { href: "/crm/analytics", label: "Analytics" },
           { href: "/staffs", label: "Staff" },
+          { href: "/setup/objects", label: "Object Manager" },
           { href: "/compliance/audit", label: "Audit Log" },
         ],
       },
@@ -77,17 +101,29 @@ export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [acctOpen, setAcctOpen] = useState(false);
   const [me, setMe] = useState<{ id: string; name: string; role: string } | null>(null);
+  const [custom, setCustom] = useState<Array<{ api: string; plural: string }>>([]);
   const acctRef = useDismiss(() => setAcctOpen(false));
 
   useEffect(() => {
     fetch("/api/auth/me").then((r) => (r.ok ? r.json() : null)).then((j) => setMe(j?.data ?? null)).catch(() => {});
   }, []);
 
+  useEffect(() => {
+    fetch("/api/objects").then((r) => (r.ok ? r.json() : null)).then((j) => setCustom((j?.data ?? []).filter((o: { isSystem: boolean }) => !o.isSystem))).catch(() => {});
+  }, [path]);
+
+  const navAll: Array<{ label: string; items: NavItem[] }> = [
+    ...WORKSPACE,
+    ...(custom.length ? [{ label: "Custom Objects", items: custom.map((o) => ({ href: `/o/${o.api}`, label: o.plural, icon: Box })) as NavItem[] }] : []),
+    ...NAV,
+  ];
+
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/login");
   }
 
+  const isActive = (href: string) => path === href || (href !== "/" && (path?.startsWith(href + "/") ?? false));
   const itemCls = (active: boolean) =>
     `flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm transition-colors ${
       active ? "bg-lime font-semibold text-forest-950" : "text-white/75 hover:bg-white/5 hover:text-white"
@@ -115,7 +151,7 @@ export function Sidebar() {
       )}
 
       <nav className="scroll-thin flex-1 overflow-y-auto px-4">
-        {NAV.map((section) => (
+        {navAll.map((section) => (
           <div key={section.label} className="mt-6 first:mt-1">
             <p className={`mb-2 px-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/40 ${collapsed ? "hidden" : ""}`}>{section.label}</p>
             <div className="space-y-1">
@@ -152,7 +188,7 @@ export function Sidebar() {
                     )}
                   </div>
                 ) : "href" in item ? (
-                  <Link key={item.href} href={item.href} title={item.label} className={itemCls(path === item.href)}>
+                  <Link key={item.href} href={item.href} title={item.label} className={itemCls(isActive(item.href))}>
                     <item.icon className="size-[18px] shrink-0" />
                     {collapsed ? <span className="sr-only">{item.label}</span> : item.label}
                   </Link>
