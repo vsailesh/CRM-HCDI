@@ -92,6 +92,21 @@ const OBJECTS: OD[] = [
       ["description", "Description", "textarea"],
       ["resolution", "Resolution", "textarea"],
       ["closedDate", "Closed Date", "date"],
+      // Member-outreach fields (mirrors the Salesforce Case the data pipeline writes to)
+      ["medicaidId", "Medicaid ID", "text", { vis: "owner" }],
+      ["memberId", "Member / Subscriber ID", "text", { vis: "owner" }],
+      ["externalId", "External ID", "text", { help: "Stable key from the source system, used to match on import" }],
+      ["stateCaseNumber", "State Case Number", "text"],
+      ["engagementStatus", "Engagement Status", "picklist", { def: "New", options: ["New", "Attempting Contact", "Engaged", "Unable to Reach", "Declined", "Completed"] }],
+      ["recertCohort", "Recert Cohort", "picklist", { options: ["30_Day", "60_Day", "90_Day"] }],
+      ["recertDueDate", "Recert Due Date", "date"],
+      ["coverageEffectiveDate", "Coverage Effective Date", "date"],
+      ["coeCode", "Category of Eligibility", "text"],
+      ["memberLanguage", "Member Language", "picklist", { options: ["English", "Spanish", "Chinese", "Non_English", "Unknown"] }],
+      ["updatedPhone", "Updated Phone Number", "phone", { vis: "owner" }],
+      ["isMinor", "Member Is a Minor", "checkbox"],
+      ["lastOutreachDate", "Last Outreach", "date"],
+      ["outreachAttempts", "Outreach Attempts", "number", { def: "0" }],
     ],
   },
   {
@@ -110,6 +125,11 @@ const OBJECTS: OD[] = [
       ...ADDR(),
       ["doNotCall", "Do Not Call", "checkbox"], ["consentToContact", "Consent to Contact", "checkbox"],
       ["status", "Status", "picklist", { def: "Active", options: ["Active", "Inactive", "Disenrolled"] }],
+      ["medicaidId", "Medicaid ID", "text", { vis: "owner" }],
+      ["coeCode", "Category of Eligibility", "text"],
+      ["isMinor", "Is a Minor", "checkbox", { help: "Calculated from date of birth when it is saved" }],
+      ["outOfStateAddress", "Out-of-State Address", "checkbox"],
+      ["updatedPhone", "Updated Phone Number", "phone", { vis: "owner" }],
     ],
   },
   {
@@ -237,6 +257,80 @@ const OBJECTS: OD[] = [
       ["languageUsed", "Language Used", "picklist", { def: "English", options: LANG }],
       ["interpreterUsed", "Interpreter Used", "checkbox"],
       ["followUpDate", "Follow-up Date", "date"], ["notes", "Call Notes", "textarea"],
+    ],
+  },
+  {
+    api: "member_measure_status", label: "Care Gap", plural: "Care Gaps", icon: "target", phi: true, pathField: "gapStatus",
+    description: "One row per member, measure and year: is the HEDIS gap open or closed, and who closed it.",
+    nameTemplate: "{contact} - {measure} {measurementYear}",
+    list: ["contact", "measure", "measurementYear", "gapStatus", "complianceStatus", "healthPlan", "closedDate"],
+    fields: [
+      ["contact", "Member", "lookup", { req: true, ref: "contact" }],
+      ["measure", "Measure", "lookup", { req: true, ref: "hedis_measure" }],
+      ["case", "Case", "lookup", { ref: "case" }],
+      ["healthPlan", "Health Plan", "lookup", { ref: "account" }],
+      ["provider", "Provider", "lookup", { ref: "provider" }],
+      ["measurementYear", "Measurement Year", "number", { req: true }],
+      ["subMeasure", "Sub-measure", "text"],
+      ["gapStatus", "Gap Status", "picklist", { req: true, def: "Open", options: ["Open", "Closed"] }],
+      ["complianceStatus", "Compliance", "picklist", { def: "Non-Compliant", options: ["Non-Compliant", "Compliant", "Excluded"] }],
+      ["externalId", "External ID", "text", { help: "memberId-MEASURE-subMeasure-year — used to match on import" }],
+      ["deliveryDate", "File Delivery Date", "date"],
+      ["closedDate", "Closed Date", "date"],
+      ["closedBy", "Closed By", "text"],
+      ["closeSource", "Closed Via", "picklist", { options: ["Claims / File Feed", "Chart Review", "Member Outreach", "Supplemental Data", "Manual"] }],
+      ["pcpVisitDate", "PCP Visit Date", "date"],
+      ["closureNotes", "Closure Notes", "textarea"],
+    ],
+  },
+  {
+    api: "engagement_log", label: "Engagement Log", plural: "Engagement Logs", icon: "phone-outgoing", phi: true,
+    description: "Every outreach attempt a CHW makes to a member, with the outcome.",
+    nameTemplate: "{contact} - {channel} {interactionDate}",
+    list: ["contact", "case", "channel", "outcome", "interactionDate", "nextStep", "followUpDate"],
+    fields: [
+      ["contact", "Member", "lookup", { req: true, ref: "contact" }],
+      ["case", "Case", "lookup", { ref: "case" }],
+      ["household", "Household", "lookup", { ref: "household" }],
+      ["channel", "Channel", "picklist", { req: true, def: "Phone", options: ["Phone", "SMS", "Email", "Voicemail", "Home Visit", "Mail", "Clinic Visit"] }],
+      ["direction", "Direction", "picklist", { def: "Outbound", options: ["Outbound", "Inbound"] }],
+      ["interactionDate", "Interaction Date", "date", { req: true }],
+      ["attemptNumber", "Attempt #", "number", { def: "1" }],
+      ["outcome", "Outcome", "picklist", { req: true, options: ["Reached - Completed", "Reached - Callback Requested", "Reached - Declined", "No Answer", "Left Voicemail", "Wrong Number", "Disconnected", "Language Barrier"] }],
+      ["durationMin", "Duration (min)", "number"],
+      ["languageUsed", "Language Used", "picklist", { def: "English", options: LANG }],
+      ["interpreterUsed", "Interpreter Used", "checkbox"],
+      ["nextStep", "Next Step", "picklist", { options: ["Call Again", "Send Letter", "Schedule Appointment", "Refer to Provider", "Refer to Community Resource", "Close Case", "None"] }],
+      ["followUpDate", "Follow-up Date", "date"],
+      ["notes", "Notes", "textarea"],
+    ],
+  },
+  {
+    api: "sdoh_assessment", label: "SDOH Assessment", plural: "SDOH Assessments", icon: "heart-handshake", phi: true,
+    description: "PRAPARE-style social-needs screening with unmet needs and referral status.",
+    nameTemplate: "{contact} - {assessmentDate}",
+    list: ["contact", "assessmentDate", "unmetNeeds", "declined", "referralStatus", "followUpDate"],
+    fields: [
+      ["contact", "Member", "lookup", { req: true, ref: "contact" }],
+      ["case", "Case", "lookup", { ref: "case" }],
+      ["healthPlan", "Health Plan", "lookup", { ref: "account" }],
+      ["assessmentDate", "Assessment Date", "date", { req: true }],
+      ["declined", "Member Declined to Answer", "checkbox"],
+      ["housingStatus", "Housing Situation", "picklist", { options: ["I have housing", "I do not have housing", "I choose not to answer"] }],
+      ["housingWorry", "Worried About Losing Housing", "picklist", { options: ["Yes", "No", "I choose not to answer"] }],
+      ["foodInsecurity", "Food Insecurity", "picklist", { options: ["Yes", "No", "I choose not to answer"] }],
+      ["transportation", "Transportation Barrier", "picklist", { options: ["Yes, medical", "Yes, non-medical", "No", "I choose not to answer"] }],
+      ["utilities", "Utility Shut-off Threat", "picklist", { options: ["Yes", "No", "Already shut off", "I choose not to answer"] }],
+      ["employment", "Employment", "picklist", { options: ["Full-time", "Part-time", "Unemployed", "Retired", "Disabled", "Student", "I choose not to answer"] }],
+      ["education", "Education", "picklist", { options: ["Less than high school", "High school / GED", "Some college", "College degree or higher", "I choose not to answer"] }],
+      ["socialIsolation", "Socially Isolated", "picklist", { options: ["Yes", "No", "I choose not to answer"] }],
+      ["safety", "Feels Physically and Emotionally Safe", "picklist", { options: ["Yes", "No", "I choose not to answer"] }],
+      ["stressLevel", "Stress Level", "picklist", { options: ["Not at all", "A little bit", "Somewhat", "Quite a bit", "Very much", "I choose not to answer"] }],
+      ["unmetNeeds", "Unmet Needs", "multipicklist", { options: ["Housing", "Food", "Transportation", "Utilities", "Employment", "Education", "Childcare", "Safety", "Social Support", "Mental Health"] }],
+      ["referralStatus", "Referral Status", "picklist", { def: "None needed", options: ["None needed", "Referral Made", "In Progress", "Resolved", "Member Declined"] }],
+      ["referralOrg", "Referred To", "text"],
+      ["followUpDate", "Follow-up Date", "date"],
+      ["notes", "Notes", "textarea", { vis: "owner" }],
     ],
   },
   {
@@ -368,3 +462,55 @@ function seedDemo() {
   })();
 }
 seedDemo();
+
+/* ───────────────── demo care gaps / outreach / SDOH (non-production) ───────────────── */
+
+function seedDemoOutreach() {
+  if (process.env.NODE_ENV === "production") return;
+  const has = (o: string) => (db.prepare("SELECT COUNT(*) n FROM srecords WHERE object = ?").get(o) as { n: number }).n;
+  if (has("member_measure_status") > 0 || has("contact") === 0 || has("hedis_measure") === 0) return;
+  const ids = (o: string) => (db.prepare("SELECT id FROM srecords WHERE object = ? ORDER BY createdAt").all(o) as { id: string }[]).map((r) => r.id);
+  const contacts = ids("contact"), measures = ids("hedis_measure"), cases = ids("case");
+  const caseOwner = new Map((db.prepare("SELECT id, ownerId FROM srecords WHERE object = 'case'").all() as { id: string; ownerId: string | null }[]).map((r) => [r.id, r.ownerId]));
+  const plans = (db.prepare("SELECT id FROM srecords WHERE object='account' AND json_extract(data,'$.type') = 'Health Plan'").all() as { id: string }[]).map((r) => r.id);
+  const staff = (db.prepare("SELECT id FROM staff WHERE isActive = 1").all() as { id: string }[]).map((s) => s.id);
+  const ins = db.prepare("INSERT INTO srecords (id,object,name,data,ownerId,createdBy,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,?)");
+  const dayAgo = (n: number) => new Date(Date.now() - n * 86400000);
+  const ymd = (d: Date) => d.toISOString().slice(0, 10);
+  const pick = <T,>(a: T[], i: number): T | undefined => (a.length ? a[i % a.length] : undefined);
+  const owner = (i: number) => pick(staff, i) ?? null;
+  const sources = ["Claims / File Feed", "Chart Review", "Member Outreach", "Supplemental Data"];
+  const outcomes = ["Reached - Completed", "No Answer", "Left Voicemail", "Reached - Callback Requested", "Wrong Number", "Reached - Completed", "No Answer", "Reached - Declined"];
+  const needs = ["Housing", "Food", "Transportation", "Utilities", "Mental Health", "Social Support"];
+  db.transaction(() => {
+    // care gaps: 60, ~45% closed, spread over the last 120 days
+    for (let i = 0; i < 60; i++) {
+      const m = measures[i % Math.min(measures.length, 8)], c = contacts[i % contacts.length];
+      const closed = i % 20 < 9;
+      const opened = dayAgo(5 + ((i * 7) % 115));
+      const closedAt = closed ? new Date(opened.getTime() + (3 + (i % 25)) * 86400000) : null;
+      const kase = pick(cases, i);
+      const data: Record<string, unknown> = { contact: c, measure: m, healthPlan: pick(plans, i), case: kase, measurementYear: 2026, gapStatus: closed ? "Closed" : "Open",
+        complianceStatus: closed ? "Compliant" : "Non-Compliant", externalId: `DEMO-${100200 + i}-${i % 8}-2026` };
+      if (closedAt && closedAt <= new Date()) { data.closedDate = ymd(closedAt); data.closeSource = sources[i % 4]; } else if (closed) { data.gapStatus = "Open"; data.complianceStatus = "Non-Compliant"; }
+      const nm = `Gap ${100200 + i} - 2026`;
+      ins.run(newId("rec"), "member_measure_status", nm, JSON.stringify(data), (kase && caseOwner.get(kase)) || owner(i), null, opened.toISOString(), opened.toISOString());
+    }
+    // engagement logs: 80 attempts in the last 100 days
+    for (let i = 0; i < 80; i++) {
+      const when = dayAgo((i * 5) % 100), c = contacts[i % contacts.length];
+      const kase = pick(cases, i);
+      const data = { contact: c, case: kase, channel: ["Phone", "Phone", "SMS", "Voicemail", "Email"][i % 5], direction: "Outbound", interactionDate: ymd(when), attemptNumber: 1 + (i % 3), outcome: outcomes[i % outcomes.length], languageUsed: "English", nextStep: ["Call Again", "Send Letter", "Schedule Appointment", "None"][i % 4] };
+      ins.run(newId("rec"), "engagement_log", `Outreach ${i + 1}`, JSON.stringify(data), (kase && caseOwner.get(kase)) || owner(i), null, when.toISOString(), when.toISOString());
+    }
+    // SDOH assessments: 24
+    for (let i = 0; i < 24; i++) {
+      const when = dayAgo((i * 4) % 90), declined = i % 12 === 11;
+      const data: Record<string, unknown> = { contact: pick(contacts, i), healthPlan: pick(plans, i), assessmentDate: ymd(when), declined,
+        housingStatus: declined ? "I choose not to answer" : i % 6 === 0 ? "I do not have housing" : "I have housing", foodInsecurity: i % 3 === 0 ? "Yes" : "No", transportation: i % 4 === 0 ? "Yes, medical" : "No",
+        unmetNeeds: declined ? [] : [needs[i % 6], ...(i % 3 === 0 ? [needs[(i + 2) % 6]] : [])], referralStatus: declined ? "Member Declined" : ["None needed", "Referral Made", "In Progress", "Resolved"][i % 4] };
+      ins.run(newId("rec"), "sdoh_assessment", `SDOH ${i + 1}`, JSON.stringify(data), owner(i), null, when.toISOString(), when.toISOString());
+    }
+  })();
+}
+seedDemoOutreach();

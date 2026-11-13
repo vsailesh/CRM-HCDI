@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Check, Pencil, Plus, Send, Trash2, X } from "lucide-react";
 import { Card } from "@/components/ui";
+import { HistoryPanel } from "@/components/history-panel";
+import { OutreachModal } from "@/components/outreach-modal";
 import {
   FieldValue, RecordForm, api, btnDanger, btnGhost, btnPrimary, fmtDateTime, inputCls,
   type Meta, type RecordRow, type SField,
@@ -29,6 +31,7 @@ export default function RecordDetailPage() {
   const [ownerId, setOwnerId] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [logging, setLogging] = useState(false);
   const [post, setPost] = useState("");
   const [shares, setShares] = useState<Share[]>([]);
   const [shareWith, setShareWith] = useState({ staffId: "", access: "read" });
@@ -98,6 +101,7 @@ export default function RecordDetailPage() {
               </>
             ) : (
               <>
+                {obj === "case" && d.access.edit && <button className={btnPrimary} onClick={() => setLogging(true)}>Log outreach</button>}
                 {d.access.edit
                   ? <button className={btnGhost} onClick={() => setEdit(true)}><Pencil className="size-4" /> Edit</button>
                   : <span className="flex h-10 items-center rounded-xl bg-gray-100 px-3 text-xs font-semibold text-gray-500">Read-only</span>}
@@ -221,8 +225,10 @@ export default function RecordDetailPage() {
             {d.feed.length === 0 && <li className="py-4 text-center text-xs text-gray-400">No posts yet</li>}
           </ul>
         </Card>
+        <HistoryPanel obj={obj} id={id} version={d.record.updatedAt} />
         </div>
       </div>
+      {logging && <OutreachModal caseId={id} caseName={rec.name} onClose={() => setLogging(false)} onSaved={() => { setLogging(false); load(); }} />}
     </div>
   );
 }

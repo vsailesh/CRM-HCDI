@@ -1,6 +1,8 @@
 import db from "./db";
 import { getFields, getObject, newId, type SField, type SObject } from "./meta";
 import { blockedFields, blockedForAggregate, canRead, visibleSql, type Viewer } from "./access";
+import { logFieldChanges, type Ctx } from "./history";
+import { ageOn } from "./normalize";
 
 const API_RE = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 export const isApi = (s: unknown): s is string => typeof s === "string" && API_RE.test(s);
@@ -188,16 +190,22 @@ export function createRecord(object: string, input: Record<string, unknown>, act
   if (errors.length) return { errors };
   const id = newId("rec");
   const now = new Date().toISOString();
+  // A care gap belongs to whoever owns its case, so a CHW sees exactly the gaps on the cases assigned to them.
+  if (object === "member_measure_status" && !ownerId && typeof values.case === "string") {
+    const c = db.prepare("SELECT ownerId FROM srecords WHERE id = ? AND object = 'case'").get(values.case) as { ownerId: string | null } | undefined;
+    if (c?.ownerId) ownerId = c.ownerId;
+  }
   db.transaction(() => {
     for (const f of fields) if (f.type === "autonumber") values[f.api] = nextAuto(object, f);
     applyHooks(object, values, undefined);
     db.prepare("INSERT INTO srecords (id,object,name,data,ownerId,createdBy,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,?)")
       .run(id, object, computeName(obj, fields, values), JSON.stringify(values), ownerId ?? actorId, actorId, now, now);
   })();
+  afterWrite(object, undefined, values);
   return { id, errors: [] as string[] };
 }
 
-export function updateRecord(object: string, id: string, input: Record<string, unknown>, ownerId?: string | null, viewer?: Viewer) {
+export function updateRecord(object: string, id: string, input: Record<string, unknown>, ownerId?: string | null, viewer?: Viewer, ctx: Ctx = {}) {
   const obj = getObject(object); if (!obj) return { errors: ["Unknown object"] };
   const cur = db.prepare("SELECT * FROM srecords WHERE id = ? AND object = ?").get(id, object) as any;
   if (!cur) return { errors: ["Record not found"], notFound: true };
@@ -206,12 +214,19 @@ export function updateRecord(object: string, id: string, input: Record<string, u
   const { values, errors } = buildValues(fields, input, before, blockedFields(fields, viewer, cur.ownerId));
   if (errors.length) return { errors };
   applyHooks(object, values, before);
-  const changed = fields.filter((f) => JSON.stringify(values[f.api]) !== JSON.stringify(before[f.api])).map((f) => f.api);
   db.prepare("UPDATE srecords SET name = ?, data = ?, ownerId = ?, updatedAt = ? WHERE id = ?")
     .run(computeName(obj, fields, values), JSON.stringify(values), ownerId === undefined ? cur.ownerId : ownerId, new Date().toISOString(), id);
+  // field history: who changed what, from where (values are PHI — read back only through access-checked routes)
+  const changed = logFieldChanges(object, id, fields, before, values, { actorId: viewer?.id || ctx.actorId || null, ...ctx });
+  if (ownerId !== undefined && ownerId !== cur.ownerId) {
+    db.prepare("INSERT INTO field_history (recordId,object,field,oldValue,newValue,changedAt,changedBy,source,batchId) VALUES (?,?,'ownerId',?,?,?,?,?,?)")
+      .run(id, object, JSON.stringify(cur.ownerId), JSON.stringify(ownerId), new Date().toISOString(), viewer?.id || ctx.actorId || null, ctx.source ?? "user", ctx.batchId ?? null);
+  }
+  if (object === "case" && ownerId !== undefined && ownerId !== cur.ownerId) cascadeCaseOwner(id, ownerId);
   // keep denormalised names of records that reference this one in their template fresh
   refreshDependents(id);
-  return { errors: [] as string[], changed };
+  afterWrite(object, before, values);
+  return { errors: [] as string[], changed, before };
 }
 
 export function deleteRecord(object: string, id: string) {
@@ -243,8 +258,34 @@ function refreshDependents(id: string) {
   }
 }
 
-/** Small built-in automations. Case: stamp / clear Closed Date when status changes. */
+/** Care gaps follow their case: when a case changes hands, its gaps go with it (and the old owner stops seeing them). */
+export function cascadeCaseOwner(caseId: string, ownerId: string | null) {
+  db.prepare("UPDATE srecords SET ownerId = ? WHERE object = 'member_measure_status' AND json_extract(data,'$.case') = ?").run(ownerId, caseId);
+}
+
+/** After a write: keep Household member counts in step with the contacts that point at them. */
+function afterWrite(object: string, before: Record<string, unknown> | undefined, after: Record<string, unknown>) {
+  if (object !== "contact") return;
+  const a = before?.household as string | undefined, b = after.household as string | undefined;
+  if (a === b && before) return;
+  for (const h of new Set([a, b])) if (h) recountHousehold(h);
+}
+export function recountHousehold(householdId: string) {
+  const row = db.prepare("SELECT data FROM srecords WHERE id = ? AND object = 'household'").get(householdId) as { data: string } | undefined;
+  if (!row) return;
+  const n = (db.prepare("SELECT COUNT(*) n FROM srecords WHERE object = 'contact' AND json_extract(data,'$.household') = ?").get(householdId) as { n: number }).n;
+  const d = JSON.parse(row.data) as Record<string, unknown>;
+  if (d.memberCount === n) return;
+  d.memberCount = n;
+  db.prepare("UPDATE srecords SET data = ? WHERE id = ?").run(JSON.stringify(d), householdId);
+}
+
+/** Small built-in automations. Case: stamp / clear Closed Date when status changes. Contact: derive Is a Minor from DOB. */
 function applyHooks(object: string, values: Record<string, unknown>, before?: Record<string, unknown>) {
+  if (object === "contact" && typeof values.dob === "string") {
+    const age = ageOn(values.dob);
+    if (age != null) values.isMinor = age < 18;
+  }
   if (object === "case" && values.status !== before?.status) {
     if (values.status === "Closed") values.closedDate = values.closedDate ?? new Date().toISOString().slice(0, 10);
     else delete values.closedDate;

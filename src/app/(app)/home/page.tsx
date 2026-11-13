@@ -17,6 +17,8 @@ export default function HomePage() {
   const [open, setOpen] = useState(0);
   const [overdue, setOverdue] = useState(0);
   const [calls, setCalls] = useState<List | null>(null);
+  const [gaps, setGaps] = useState<List | null>(null);
+  const [gapFields, setGapFields] = useState<SField[]>([]);
   const [renewals, setRenewals] = useState(0);
   const [feed, setFeed] = useState<RecordRow[]>([]);
   const [dashes, setDashes] = useState<Array<{ id: string; name: string }>>([]);
@@ -31,6 +33,8 @@ export default function HomePage() {
     q("household", [{ field: "renewalStatus", op: "eq", value: "Due Soon" }]).then((r) => setRenewals(r.meta.total));
     api<List>("/api/records/chatter?limit=5&sort=createdAt").then((r) => r.ok && setFeed(r.data.data));
     api<Array<{ id: string; name: string }>>("/api/dashboards").then((r) => r.ok && setDashes(r.data));
+    q("member_measure_status", [{ field: "gapStatus", op: "eq", value: "Open" }], "&owner=me&sort=updatedAt&dir=asc").then(setGaps);
+    api<{ fields: SField[] }>("/api/objects/member_measure_status").then((r) => r.ok && setGapFields(r.data.fields));
     api<{ fields: SField[] }>("/api/objects/case").then((r) => r.ok && setCaseFields(r.data.fields));
   }, []);
 
@@ -57,6 +61,22 @@ export default function HomePage() {
           </Link>
         ))}
       </div>
+
+      <Card className="p-6">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-bold uppercase tracking-wide text-gray-500">My open care gaps <span className="font-normal normal-case text-gray-400">({gaps?.meta.total ?? 0})</span></h2>
+          <div className="flex gap-4"><Link href="/my-day" className="text-xs font-semibold text-forest-800 hover:underline">My day →</Link><Link href="/o/member_measure_status" className="text-xs font-semibold text-forest-800 hover:underline">All my gaps →</Link></div>
+        </div>
+        <ul className="divide-y divide-gray-50">
+          {gaps?.data.map((g) => (
+            <li key={g.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5">
+              <Link href={`/o/member_measure_status/${g.id}`} className="min-w-0 truncate text-sm font-semibold text-forest-800 hover:underline">{g.refs.contact ?? g.name} · {g.refs.measure?.split(" - ")[0] ?? ""}</Link>
+              <span className="text-xs text-gray-400">{g.values.measurementYear ? `MY ${String(g.values.measurementYear)}` : ""}</span>
+            </li>
+          ))}
+          {gaps && gaps.data.length === 0 && <li className="py-6 text-center text-sm text-gray-400">No open gaps on your cases.</li>}
+        </ul>
+      </Card>
 
       <div className="grid gap-5 xl:grid-cols-3">
         <Card className="p-6 xl:col-span-2">

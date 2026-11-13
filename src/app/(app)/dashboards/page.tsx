@@ -12,6 +12,8 @@ type Dash = { id: string; name: string; description: string | null; updatedAt: s
 const TEMPLATES = [
   { id: "cases", label: "Case operations", hint: "Open, overdue and urgent cases; status, type and owner breakdowns" },
   { id: "hedis", label: "HEDIS outreach", hint: "Measures, providers, chart retrieval and redetermination call outcomes" },
+  { id: "gaps", label: "Care gaps", hint: "Open vs closed gaps by measure and health plan, closure source and monthly closures" },
+  { id: "outreach", label: "Member outreach & SDOH", hint: "Attempts, contact outcomes, channels, CHW activity and social-needs referrals" },
   { id: "blank", label: "Blank", hint: "Start empty and add your own widgets" },
 ];
 

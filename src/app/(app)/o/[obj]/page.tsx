@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowDown, ArrowUp, Download, Plus, Search } from "lucide-react";
+import { ArrowDown, ArrowUp, Download, EyeOff, Layers, Plus, Search } from "lucide-react";
 import { Card } from "@/components/ui";
+import { BulkModal } from "@/components/bulk-modal";
+import { maskKindFor, maskValue } from "@/lib/normalize";
 import { FieldValue, csvCell, api, btnGhost, btnPrimary, inputCls, type Filter, type Meta, type RecordRow } from "@/components/records";
 
 const PAGE = 25;
@@ -23,7 +25,10 @@ export default function ObjectListPage() {
   const [pick, setPick] = useState({ field: "", value: "" });
   const [error, setError] = useState("");
   const [level, setLevel] = useState("public");
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [bulk, setBulk] = useState(false);
 
+  useEffect(() => { fetch("/api/auth/me").then((r) => (r.ok ? r.json() : null)).then((j) => setIsAdmin(j?.data?.role === "admin")).catch(() => {}); }, []);
   useEffect(() => {
     setMeta(null); setOffset(0); setQ(""); setPick({ field: "", value: "" }); setError("");
     api<Meta>(`/api/objects/${obj}`).then((r) => (r.ok ? setMeta(r.data) : setError(r.message)));
@@ -44,18 +49,23 @@ export default function ObjectListPage() {
 
   useEffect(() => { const t = setTimeout(load, 150); return () => clearTimeout(t); }, [load]);
 
-  async function exportCsv() {
+  async function exportCsv(masked = false) {
     if (!meta) return;
     const filters: Filter[] = pick.field && pick.value ? [{ field: pick.field, op: "eq", value: pick.value }] : [];
     const r = await api(`/api/reports/run`, "POST", { object: obj, filters, csv: true, sort, dir });
     if (!r.ok) return;
     const cols = meta.fields.filter((f) => f.type !== "textarea");
     const esc = csvCell;
+    const cell = (c: (typeof cols)[number], rec: RecordRow) => {
+      const raw = c.type === "lookup" ? rec.refs[c.api] : Array.isArray(rec.values[c.api]) ? (rec.values[c.api] as string[]).join("; ") : rec.values[c.api];
+      const kind = masked ? maskKindFor(c.api, c.type) : null;
+      return kind ? maskValue(kind, raw) : raw;
+    };
     const csv = [["Record Name", ...cols.map((c) => c.label)].map(esc).join(","),
-      ...(r.data.rows as RecordRow[]).map((rec) => [rec.name, ...cols.map((c) => (c.type === "lookup" ? rec.refs[c.api] : Array.isArray(rec.values[c.api]) ? (rec.values[c.api] as string[]).join("; ") : rec.values[c.api]))].map(esc).join(","))].join("\r\n");
+      ...(r.data.rows as RecordRow[]).map((rec) => [masked && meta.object.phi ? maskValue("name", rec.name) : rec.name, ...cols.map((c) => cell(c, rec))].map(esc).join(","))].join("\n");
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-    a.download = `${obj}.csv`; a.click(); URL.revokeObjectURL(a.href);
+    a.download = `${obj}${masked ? "-masked" : ""}.csv`; a.click(); URL.revokeObjectURL(a.href);
   }
 
   if (error && !meta) return <div className="p-6 text-sm text-red-600">{error}</div>;
@@ -73,7 +83,9 @@ export default function ObjectListPage() {
           {level === "private" && <p className="ml-2 mt-2 inline-block rounded-md bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-600">Private — you see records you own, were shared with you, or that relate to your work</p>}
         </div>
         <div className="flex gap-2">
-          <button className={btnGhost} onClick={exportCsv}><Download className="size-4" /> Export</button>
+          <button className={btnGhost} onClick={() => exportCsv(false)}><Download className="size-4" /> Export</button>
+          {meta.object.phi && <button className={btnGhost} onClick={() => exportCsv(true)} title="Names, DOB, phone, address, IDs and notes are masked"><EyeOff className="size-4" /> Export masked</button>}
+          {isAdmin && <button className={btnGhost} onClick={() => setBulk(true)}><Layers className="size-4" /> Bulk update</button>}
           <Link href={`/o/${obj}/new`} className={btnPrimary}><Plus className="size-4" /> New {meta.object.label}</Link>
         </div>
       </Card>
@@ -130,6 +142,7 @@ export default function ObjectListPage() {
           </div>
         </div>
       </Card>
+      {bulk && <BulkModal object={obj} label={meta.object.plural} fields={meta.fields} initialFilters={pick.field && pick.value ? [{ field: pick.field, op: "eq", value: pick.value }] : []} onClose={() => setBulk(false)} onDone={load} />}
     </div>
   );
 }

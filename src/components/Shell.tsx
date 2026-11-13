@@ -8,6 +8,7 @@ import {
   MessageCircle, MapPin, QrCode, ChevronDown, Coins, Bell, RefreshCw, PanelLeft, LogOut,
   Home, LifeBuoy, Contact, Building2, BookOpen, BarChart3, MessagesSquare, Paperclip, ClipboardCheck,
   Stethoscope, Handshake, PhoneCall, Box,
+  Sun, Target, PhoneOutgoing, HeartHandshake, Gauge, Scale, Upload, ShieldCheck, History,
   type LucideIcon,
 } from "lucide-react";
 
@@ -20,6 +21,7 @@ const WORKSPACE: Array<{ label: string; items: NavItem[] }> = [
     label: "Workspace",
     items: [
       { href: "/home", label: "Home", icon: Home },
+      { href: "/my-day", label: "My Day", icon: Sun },
       { href: "/o/case", label: "Cases", icon: LifeBuoy },
       { href: "/o/contact", label: "Contacts", icon: Contact },
       { href: "/o/account", label: "Accounts", icon: Building2 },
@@ -33,6 +35,19 @@ const WORKSPACE: Array<{ label: string; items: NavItem[] }> = [
       { href: "/o/provider_health_plan", label: "Provider Health Plans", icon: Handshake },
       { href: "/o/household", label: "Households", icon: Users },
       { href: "/o/redetermination_call", label: "Redetermination Calls", icon: PhoneCall },
+      { href: "/o/member_measure_status", label: "Care Gaps", icon: Target },
+      { href: "/o/engagement_log", label: "Engagement Logs", icon: PhoneOutgoing },
+      { href: "/o/sdoh_assessment", label: "SDOH Assessments", icon: HeartHandshake },
+    ],
+  },
+  {
+    label: "Insights & Data",
+    items: [
+      { href: "/insights", label: "KPI Center", icon: Gauge },
+      { href: "/workload", label: "Workload", icon: Scale },
+      { href: "/data/import", label: "Import Data", icon: Upload },
+      { href: "/data/quality", label: "Data Quality", icon: ShieldCheck },
+      { href: "/data/history", label: "Batches & Rollback", icon: History },
     ],
   },
 ];
